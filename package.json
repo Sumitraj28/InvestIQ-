@@ -1,0 +1,10 @@
+{
+  "name": "stocksense-root",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "npm --prefix backend run dev",
+    "seed": "npm --prefix backend run seed"
+  }
+}
