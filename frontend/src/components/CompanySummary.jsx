@@ -10,6 +10,7 @@ import {
   LineChart,
   Scale,
 } from 'lucide-react';
+import CompanyLogo from './CompanyLogo';
 
 function formatINR(value, options = {}) {
   if (value === undefined || value === null || Number.isNaN(Number(value))) return 'N/A';
@@ -85,31 +86,39 @@ export default function CompanySummary({ stock }) {
   return (
     <section className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col justify-between gap-6 border-b border-slate-100 pb-5 md:flex-row md:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-              {stock.ticker}
-            </h1>
-            <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-              NSE
-            </span>
+        <div className="flex min-w-0 gap-4">
+          <CompanyLogo
+            ticker={stock.ticker}
+            name={stock.name}
+            website={stock.website}
+            size="lg"
+          />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                {stock.ticker}
+              </h1>
+              <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
+                NSE
+              </span>
+            </div>
+            <p className="mt-2 text-base font-semibold text-slate-700">{stock.name}</p>
+            <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+              <Building2 className="h-4 w-4" />
+              <span>{stock.industry || stock.sector || 'Unknown sector'}</span>
+            </div>
+            {stock.website && (
+              <a
+                href={stock.website}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700"
+              >
+                <Globe2 className="h-4 w-4" />
+                Company website
+              </a>
+            )}
           </div>
-          <p className="mt-2 text-base font-semibold text-slate-700">{stock.name}</p>
-          <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
-            <Building2 className="h-4 w-4" />
-            <span>{stock.industry || stock.sector || 'Unknown sector'}</span>
-          </div>
-          {stock.website && (
-            <a
-              href={stock.website}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
-            >
-              <Globe2 className="h-4 w-4" />
-              Company website
-            </a>
-          )}
         </div>
 
         <div className="md:text-right">

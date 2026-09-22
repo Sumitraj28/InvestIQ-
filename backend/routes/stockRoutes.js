@@ -9,6 +9,7 @@ const {
 } = require('../services/pythonDataService');
 const { fetchAndSaveStock, buildOfflineStockData } = require('../services/nseService');
 const { generateAiCompanyBrief } = require('../services/aiSummaryService');
+const { computeSignal } = require('../services/signalEngine');
 
 // Cache validity: 15 minutes (Requirement 4)
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -35,6 +36,7 @@ function stockToResponse(stock, stale = false, dataSource = 'live') {
   const dataObj = stock?.toObject ? stock.toObject() : { ...stock };
   dataObj.stale = stale;
   dataObj.dataSource = dataSource;
+  dataObj.signal = computeSignal(dataObj);
   return dataObj;
 }
 

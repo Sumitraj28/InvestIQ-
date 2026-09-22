@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, RefreshCw, SearchX } from 'lucide-react';
+import { AlertCircle, ArrowLeft, SearchX } from 'lucide-react';
 import { getStock, getStockAiSummary, getStockHistory } from '../services/api';
-import AiCompanyBrief from '../components/AiCompanyBrief';
-import CompanySummary, { CompanySummarySkeleton } from '../components/CompanySummary';
-import PriceChart from '../components/PriceChart';
 import SearchBar from '../components/SearchBar';
+import StockDetailDashboard, { StockDetailSkeleton } from '../components/StockDetailDashboard';
 
 function normalizeRouteTicker(value) {
   const decoded = decodeURIComponent(value || '').trim().toUpperCase();
@@ -130,14 +128,7 @@ export default function CompanyPage() {
       </div>
 
       {summaryLoading && (
-        <div>
-          <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-500">
-            <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
-            Loading market data for {routeTicker}
-          </div>
-          <CompanySummarySkeleton />
-          <PriceChart loading />
-        </div>
+        <StockDetailSkeleton ticker={routeTicker} />
       )}
 
       {!summaryLoading && error && (
@@ -161,22 +152,15 @@ export default function CompanyPage() {
       )}
 
       {!summaryLoading && !error && stock && (
-        <div>
-          <CompanySummary stock={stock} />
-          <AiCompanyBrief summary={aiSummary} loading={aiLoading} error={aiError} />
-
-          {historyError && !historyLoading && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
-              {historyError}
-            </div>
-          )}
-
-          <PriceChart
-            history={history}
-            ticker={stock.ticker || routeTicker}
-            loading={historyLoading}
-          />
-        </div>
+        <StockDetailDashboard
+          stock={stock}
+          history={history}
+          historyLoading={historyLoading}
+          historyError={historyError}
+          aiSummary={aiSummary}
+          aiLoading={aiLoading}
+          aiError={aiError}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import { popularTickers } from '../data/popularTickers';
+import CompanyLogo from './CompanyLogo';
 
 export default function SearchBar({ initialValue = '', onSearch }) {
   const [ticker, setTicker] = useState(initialValue);
@@ -84,7 +85,7 @@ export default function SearchBar({ initialValue = '', onSearch }) {
   };
 
   return (
-    <div ref={wrapperRef} className="w-full max-w-2xl mx-auto">
+    <div ref={wrapperRef} className="w-full">
       <form onSubmit={handleSubmit} className="relative flex items-center">
         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
           <Search className="w-5 h-5" />
@@ -98,7 +99,7 @@ export default function SearchBar({ initialValue = '', onSearch }) {
           }}
           onFocus={() => setIsOpen(true)}
           placeholder="Search NSE ticker, company, or sector..."
-          className="w-full pl-11 pr-28 py-3.5 bg-white border border-slate-300 rounded-lg shadow-sm text-slate-900 placeholder-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-3.5 pl-11 pr-28 font-medium text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100"
           aria-label="Search NSE ticker"
         />
         {ticker && (
@@ -117,7 +118,7 @@ export default function SearchBar({ initialValue = '', onSearch }) {
         )}
         <button
           type="submit"
-          className="absolute right-2 px-4 sm:px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-md shadow-sm transition"
+          className="absolute right-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 sm:px-5"
         >
           Search
         </button>
@@ -132,9 +133,12 @@ export default function SearchBar({ initialValue = '', onSearch }) {
                 className="w-full px-4 py-3 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none transition"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-900">{item.symbol}</div>
-                    <div className="truncate text-xs text-slate-500">{item.name}</div>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <CompanyLogo ticker={item.symbol} name={item.name} size="sm" />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-900">{item.symbol}</div>
+                      <div className="truncate text-xs text-slate-500">{item.name}</div>
+                    </div>
                   </div>
                   <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">
                     {item.sector}
@@ -153,7 +157,7 @@ export default function SearchBar({ initialValue = '', onSearch }) {
             key={item.symbol}
             type="button"
             onClick={() => runSearch(item.symbol)}
-            className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 rounded-md font-medium text-slate-700 hover:text-blue-600 transition"
+          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 font-medium text-slate-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
           >
             {item.symbol.replace('.NS', '')}
           </button>
