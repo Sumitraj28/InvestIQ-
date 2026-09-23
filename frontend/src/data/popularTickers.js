@@ -24,4 +24,5 @@ export const popularTickers = [
   { symbol: 'ADANIENT.NS', name: 'Adani Enterprises', sector: 'Industrials' },
   { symbol: 'NTPC.NS', name: 'NTPC', sector: 'Utilities' },
   { symbol: 'POWERGRID.NS', name: 'Power Grid Corporation', sector: 'Utilities' },
+  { symbol: 'GAIL.NS', name: 'GAIL (India) Limited', sector: 'Utilities' },
 ];

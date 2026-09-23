@@ -23,4 +23,9 @@ export const getStockAiSummary = async (ticker) => {
   return response.data;
 };
 
+export const getStockFinancials = async (ticker) => {
+  const response = await api.get(`/stocks/${ticker}/financials`);
+  return response.data;
+};
+
 export default api;

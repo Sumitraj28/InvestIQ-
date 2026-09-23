@@ -10,6 +10,7 @@ const {
 const { fetchAndSaveStock, buildOfflineStockData } = require('../services/nseService');
 const { generateAiCompanyBrief } = require('../services/aiSummaryService');
 const { computeSignal } = require('../services/signalEngine');
+const { getStockFinancials } = require('../services/growwService');
 
 // Cache validity: 15 minutes (Requirement 4)
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -172,6 +173,37 @@ router.get('/:ticker/ai-summary', async (req, res) => {
     return res.status(500).json({
       success: false,
       error: 'Unable to generate AI company summary.',
+    });
+  }
+});
+
+// @route   GET /api/stocks/:ticker/financials
+// @desc    Get real company quarterly and yearly financials (revenue, profit, growth, fundamentals, shareholding)
+// @access  Public
+router.get('/:ticker/financials', async (req, res) => {
+  const rawTicker = req.params.ticker;
+
+  if (!isValidTicker(rawTicker)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid ticker symbol. Only valid NSE ticker characters allowed.',
+    });
+  }
+
+  const cleanTicker = normalizeSymbol(rawTicker);
+
+  try {
+    const data = await getStockFinancials(cleanTicker);
+    return res.status(200).json({
+      success: true,
+      ticker: cleanTicker,
+      data,
+    });
+  } catch (err) {
+    console.error(`[Financials] Error for ${cleanTicker}:`, err.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Unable to fetch financial performance data.',
     });
   }
 });

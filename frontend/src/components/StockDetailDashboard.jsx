@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -23,6 +23,26 @@ import {
 import AiCompanyBrief from './AiCompanyBrief';
 import CompanyLogo from './CompanyLogo';
 import SignalBadge from './SignalBadge';
+import { getStockFinancials } from '../services/api';
+
+function FinancialTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const profitItem = payload.find((p) => p.dataKey === 'profit');
+  const revenueItem = payload.find((p) => p.dataKey === 'revenue');
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-xl min-w-[130px]">
+      <div className="font-bold text-slate-900 text-sm mb-2">{label}</div>
+      <div className="font-semibold text-emerald-600 mb-1 flex items-center justify-between gap-3">
+        <span>profit :</span>
+        <span className="font-bold">{profitItem?.value !== undefined ? Math.round(profitItem.value).toLocaleString('en-IN') : '—'}</span>
+      </div>
+      <div className="font-medium text-slate-500 flex items-center justify-between gap-3">
+        <span>revenue :</span>
+        <span className="font-semibold text-slate-700">{revenueItem?.value !== undefined ? Math.round(revenueItem.value).toLocaleString('en-IN') : '—'}</span>
+      </div>
+    </div>
+  );
+}
 
 const ranges = [
   { label: '1D', days: 1 },
@@ -185,12 +205,74 @@ export default function StockDetailDashboard({
   const todayHigh = latest?.high || latestPrice * 1.02;
   const week52Low = Number(stock.week52Low || Math.min(...chartData.map((item) => item.low || item.close)));
   const week52High = Number(stock.week52High || Math.max(...chartData.map((item) => item.high || item.close)));
-  const revenueBase = Math.max(120, Math.round((Number(stock.marketCap || 0) / 10000000) * 0.08));
-  const financialData = [
-    { year: '2024', revenue: Math.round(revenueBase * 0.72), profit: Math.round(revenueBase * 0.08) },
-    { year: '2025', revenue: Math.round(revenueBase * 0.86), profit: Math.round(revenueBase * 0.13) },
-    { year: '2026', revenue: revenueBase, profit: Math.round(revenueBase * 0.18) },
-  ];
+  const [financialPeriod, setFinancialPeriod] = useState('Yearly');
+  const [financials, setFinancials] = useState(null);
+  const [financialsLoading, setFinancialsLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!stock?.ticker) return;
+
+    setFinancialsLoading(true);
+    getStockFinancials(stock.ticker)
+      .then((res) => {
+        if (isMounted && res?.data) {
+          setFinancials(res.data);
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch real financials:', err);
+      })
+      .finally(() => {
+        if (isMounted) setFinancialsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [stock?.ticker]);
+
+  const activeFinancialList = useMemo(() => {
+    if (financials) {
+      const list = financialPeriod === 'Quarterly'
+        ? financials.quarterly || []
+        : financials.yearly || [];
+      if (list.length > 0) return list;
+    }
+    const revenueBase = Math.max(120, Math.round((Number(stock.marketCap || 0) / 10000000) * 0.08));
+    return [
+      { period: '2024', year: '2024', revenue: Math.round(revenueBase * 0.72), profit: Math.round(revenueBase * 0.08) },
+      { period: '2025', year: '2025', revenue: Math.round(revenueBase * 0.86), profit: Math.round(revenueBase * 0.13) },
+      { period: '2026', year: '2026', revenue: revenueBase, profit: Math.round(revenueBase * 0.18) },
+    ];
+  }, [financials, financialPeriod, stock?.marketCap]);
+
+  const financialSummary = useMemo(() => {
+    if (financials?.summary) {
+      return financialPeriod === 'Quarterly'
+        ? financials.summary.quarterly
+        : financials.summary.yearly;
+    }
+    if (activeFinancialList.length > 0) {
+      const latestItem = activeFinancialList[activeFinancialList.length - 1];
+      const prevItem = activeFinancialList.length > 1 ? activeFinancialList[activeFinancialList.length - 2] : null;
+      const revGrowth = prevItem && prevItem.revenue ? ((latestItem.revenue - prevItem.revenue) / Math.abs(prevItem.revenue)) * 100 : 16.28;
+      const profGrowth = prevItem && prevItem.profit ? ((latestItem.profit - prevItem.profit) / Math.abs(prevItem.profit)) * 100 : 25.11;
+      return {
+        revenue: latestItem.revenue,
+        revenueGrowth: {
+          formatted: `${revGrowth >= 0 ? '+' : ''}${revGrowth.toFixed(2)}%`,
+          isPositive: revGrowth >= 0,
+        },
+        profit: latestItem.profit,
+        profitGrowth: {
+          formatted: `${profGrowth >= 0 ? '+' : ''}${profGrowth.toFixed(2)}%`,
+          isPositive: profGrowth >= 0,
+        },
+      };
+    }
+    return null;
+  }, [financials, financialPeriod, activeFinancialList]);
 
   return (
     <div className="bg-white">
@@ -330,18 +412,18 @@ export default function StockDetailDashboard({
           </h2>
           <div className="mt-5 grid gap-x-12 md:grid-cols-2">
             <div>
-              <FundamentalRow label="Market Cap" value={formatCompactINR(stock.marketCap)} />
-              <FundamentalRow label="P/E Ratio(TTM)" value={formatRatio(stock.peRatio)} />
-              <FundamentalRow label="P/B Ratio" value="N/A" />
-              <FundamentalRow label="Industry P/E" value={formatRatio(stock.signal?.metadata?.sectorAveragePe)} />
-              <FundamentalRow label="Debt to Equity" value="N/A" />
+              <FundamentalRow label="Market Cap" value={financials?.fundamentals?.['Market Cap'] || formatCompactINR(stock.marketCap)} />
+              <FundamentalRow label="P/E Ratio(TTM)" value={financials?.fundamentals?.['P/E Ratio(TTM)'] || formatRatio(stock.peRatio)} />
+              <FundamentalRow label="P/B Ratio" value={financials?.fundamentals?.['P/B Ratio'] || 'N/A'} />
+              <FundamentalRow label="Industry P/E" value={financials?.fundamentals?.['Industry P/E'] || formatRatio(stock.signal?.metadata?.sectorAveragePe)} />
+              <FundamentalRow label="Debt to Equity" value={financials?.fundamentals?.['Debt to Equity'] || 'N/A'} />
             </div>
             <div className="border-slate-100 md:border-l md:pl-10">
-              <FundamentalRow label="ROE" value="N/A" />
-              <FundamentalRow label="EPS(TTM)" value="N/A" />
-              <FundamentalRow label="Dividend Yield" value="N/A" />
-              <FundamentalRow label="Book Value" value="N/A" />
-              <FundamentalRow label="Face Value" value="N/A" />
+              <FundamentalRow label="ROE" value={financials?.fundamentals?.['ROE'] || 'N/A'} />
+              <FundamentalRow label="EPS(TTM)" value={financials?.fundamentals?.['EPS(TTM)'] || 'N/A'} />
+              <FundamentalRow label="Dividend Yield" value={financials?.fundamentals?.['Dividend Yield'] || 'N/A'} />
+              <FundamentalRow label="Book Value" value={financials?.fundamentals?.['Book Value'] || 'N/A'} />
+              <FundamentalRow label="Face Value" value={financials?.fundamentals?.['Face Value'] || 'N/A'} />
             </div>
           </div>
         </section>
@@ -349,35 +431,91 @@ export default function StockDetailDashboard({
         <section className="mt-10">
           <div className="mb-5 flex items-center justify-between gap-4">
             <h2 className="text-xl font-bold text-slate-800">Financial performance</h2>
-            <button type="button" className="inline-flex items-center gap-1 text-sm font-bold text-slate-700">
+            <button type="button" className="inline-flex items-center gap-1 text-sm font-bold text-slate-700 hover:text-emerald-700 transition">
               All Financials
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Quarterly / Yearly Toggle Buttons */}
           <div className="mb-4 flex gap-3">
-            <button type="button" className="rounded-full border border-slate-200 px-5 py-2 text-sm font-semibold text-slate-600">Quarterly</button>
-            <button type="button" className="rounded-full border border-slate-900 px-5 py-2 text-sm font-semibold text-slate-900">Yearly</button>
+            <button
+              type="button"
+              onClick={() => setFinancialPeriod('Quarterly')}
+              className={`rounded-full px-5 py-2 text-sm font-semibold transition cursor-pointer ${
+                financialPeriod === 'Quarterly'
+                  ? 'border-2 border-slate-900 text-slate-900 bg-white font-bold'
+                  : 'border border-slate-200 text-slate-600 hover:border-slate-300 bg-white'
+              }`}
+            >
+              Quarterly
+            </button>
+            <button
+              type="button"
+              onClick={() => setFinancialPeriod('Yearly')}
+              className={`rounded-full px-5 py-2 text-sm font-semibold transition cursor-pointer ${
+                financialPeriod === 'Yearly'
+                  ? 'border-2 border-slate-900 text-slate-900 bg-white font-bold'
+                  : 'border border-slate-200 text-slate-600 hover:border-slate-300 bg-white'
+              }`}
+            >
+              Yearly
+            </button>
           </div>
-          <div className="rounded-lg border border-slate-200 p-5">
-            <div className="mb-5 flex gap-8 text-sm">
+
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div className="mb-6 flex gap-10 text-sm">
               <div>
-                <div className="font-semibold uppercase tracking-widest text-slate-400">Revenue</div>
-                <div className="mt-2 font-bold text-slate-800">₹{financialData[2].revenue}Cr <span className="text-emerald-600">+16.28%</span></div>
+                <div className="font-bold uppercase tracking-wider text-[11px] text-slate-400">Revenue</div>
+                <div className="mt-1.5 flex items-baseline gap-2 font-extrabold text-slate-900 text-lg">
+                  ₹{financialSummary ? Math.round(financialSummary.revenue).toLocaleString('en-IN') : '—'}Cr
+                  {financialSummary?.revenueGrowth && (
+                    <span
+                      className={`text-sm font-bold ${
+                        financialSummary.revenueGrowth.isPositive ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {financialSummary.revenueGrowth.formatted}
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
-                <div className="font-semibold uppercase tracking-widest text-slate-400">Profit</div>
-                <div className="mt-2 font-bold text-slate-800">₹{financialData[2].profit}Cr <span className="text-emerald-600">+25.11%</span></div>
+                <div className="font-bold uppercase tracking-wider text-[11px] text-slate-400">Profit</div>
+                <div className="mt-1.5 flex items-baseline gap-2 font-extrabold text-slate-900 text-lg">
+                  ₹{financialSummary ? Math.round(financialSummary.profit).toLocaleString('en-IN') : '—'}Cr
+                  {financialSummary?.profitGrowth && (
+                    <span
+                      className={`text-sm font-bold ${
+                        financialSummary.profitGrowth.isPositive ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {financialSummary.profitGrowth.formatted}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="h-[260px]">
+
+            <div className="h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={financialData} barGap={6} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+                <BarChart data={activeFinancialList} barGap={6} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
                   <CartesianGrid vertical={false} stroke="#e5e7eb" strokeDasharray="4 4" />
-                  <XAxis dataKey="year" tickLine={false} axisLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                  <YAxis orientation="right" tickLine={false} axisLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="revenue" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="profit" fill="#00b386" radius={[4, 4, 0, 0]} />
+                  <XAxis
+                    dataKey="period"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 500 }}
+                  />
+                  <YAxis
+                    orientation="right"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                  />
+                  <Tooltip content={<FinancialTooltip />} />
+                  <Bar dataKey="revenue" fill="#94a3b8" radius={[4, 4, 0, 0]} maxBarSize={64} />
+                  <Bar dataKey="profit" fill="#00b386" radius={[4, 4, 0, 0]} maxBarSize={64} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -419,10 +557,26 @@ export default function StockDetailDashboard({
           </div>
           <div className="rounded-lg border border-slate-200 p-5">
             <div className="space-y-8">
-              <ShareholdingRow label="Promoters" value={53.22} color="bg-indigo-400" />
-              <ShareholdingRow label="DII" value={29.46} color="bg-lime-500" />
-              <ShareholdingRow label="Public" value={14.31} color="bg-orange-400" />
-              <ShareholdingRow label="FII" value={3.02} color="bg-sky-500" />
+              <ShareholdingRow
+                label="Promoters"
+                value={financials?.shareholding?.promoters !== undefined ? financials.shareholding.promoters : 53.22}
+                color="bg-indigo-400"
+              />
+              <ShareholdingRow
+                label="DII"
+                value={financials?.shareholding?.dii !== undefined ? financials.shareholding.dii : 29.46}
+                color="bg-lime-500"
+              />
+              <ShareholdingRow
+                label="Public"
+                value={financials?.shareholding?.public !== undefined ? financials.shareholding.public : 14.31}
+                color="bg-orange-400"
+              />
+              <ShareholdingRow
+                label="FII"
+                value={financials?.shareholding?.fii !== undefined ? financials.shareholding.fii : 3.02}
+                color="bg-sky-500"
+              />
             </div>
           </div>
         </section>
