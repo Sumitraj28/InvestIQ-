@@ -36,7 +36,7 @@ Retail investors in India either rely on scattered broker notes and forum "tips,
 | Aditya Pratap Singh    | AI/ML                                                                        |
 | Ritesh                 | Cloud                                                                        |
 | Tanish Yadav           | Backend                                                                      |
-| Ashu Singh             |                                                                              |
+| Ashu Singh             | Backend                                                                      |
 ---
 
 
