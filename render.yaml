@@ -2,6 +2,7 @@ services:
   - type: web
     name: investiq-backend
     runtime: node
+    rootDir: backend
     plan: free
     buildCommand: npm install
     startCommand: npm start
@@ -37,6 +38,7 @@ services:
   - type: web
     name: investiq-python
     runtime: python
+    rootDir: data-service
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
