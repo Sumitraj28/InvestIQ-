@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: investiq-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      - key: MONGO_URI
+        sync: false
+      - key: PYTHON_DATA_SERVICE_URL
+        value: https://investiq-python.onrender.com
+      - key: FRONTEND_URL
+        value: https://investiq.vercel.app
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: REQUEST_TIMEOUT_MS
+        value: "15000"
+      - key: PYTHON_REQUEST_TIMEOUT_MS
+        value: "30000"
+      - key: NSE_CACHE_TTL_SECONDS
+        value: "900"
+      - key: AI_CACHE_TTL_SECONDS
+        value: "21600"
+      - key: HISTORY_CACHE_TTL_SECONDS
+        value: "900"
+
+  - type: web
+    name: investiq-python
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: "*"

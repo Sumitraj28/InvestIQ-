@@ -317,6 +317,27 @@ async function fetchAndSaveStock(symbol) {
   return stockDoc;
 }
 
+const TOP_NSE_SYMBOLS = [
+  'RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK',
+  'SBIN', 'ITC', 'BHARTIARTL', 'LT', 'KOTAKBANK',
+  'AXISBANK', 'WIPRO', 'MARUTI', 'BAJFINANCE', 'TATAPOWER',
+  'TATASTEEL', 'TATACONSUM', 'TATAELXSI', 'TITAN',
+];
+
+async function syncTopStocks() {
+  const results = [];
+  for (const symbol of TOP_NSE_SYMBOLS) {
+    try {
+      const stock = await fetchAndSaveStock(symbol);
+      results.push(stock);
+      console.log(`[Seed] Synced ${symbol}`);
+    } catch (err) {
+      console.warn(`[Seed] Failed to sync ${symbol}: ${err.message}`);
+    }
+  }
+  return results;
+}
+
 module.exports = {
   NSEFetchError,
   normalizeSymbol,
@@ -325,4 +346,6 @@ module.exports = {
   getHistory,
   fetchAndSaveStock,
   buildOfflineStockData,
+  syncTopStocks,
+  TOP_NSE_SYMBOLS,
 };

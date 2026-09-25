@@ -1,3 +1,6 @@
+const config = require('../config/env');
+const { withTimeout } = require('../utils/timeout');
+
 function formatCurrency(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return 'not available';
@@ -129,46 +132,64 @@ ${JSON.stringify({
 }
 
 async function generateOpenAiBrief(stock) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openai.apiKey;
   if (!apiKey) return null;
 
-  const model = process.env.OPENAI_MODEL || 'gpt-5';
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      input: buildPrompt(stock),
-      text: {
-        format: {
-          type: 'json_object',
-        },
+  const model = config.openai.model;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeouts.request);
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        model,
+        input: buildPrompt(stock),
+        text: {
+          format: {
+            type: 'json_object',
+          },
+        },
+      }),
+    });
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || `OpenAI request failed with status ${response.status}`);
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || `OpenAI request failed with status ${response.status}`);
+    }
+
+    const parsed = parseJsonFromText(payload?.output_text);
+    if (!parsed) {
+      throw new Error('OpenAI response did not contain valid JSON.');
+    }
+
+    return {
+      generatedBy: `openai:${model}`,
+      ...parsed,
+    };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('OpenAI request timed out');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const parsed = parseJsonFromText(payload?.output_text);
-  if (!parsed) {
-    throw new Error('OpenAI response did not contain valid JSON.');
-  }
-
-  return {
-    generatedBy: `openai:${model}`,
-    ...parsed,
-  };
 }
 
 async function generateAiCompanyBrief(stock) {
   try {
-    const openAiBrief = await generateOpenAiBrief(stock);
+    const openAiBrief = await withTimeout(
+      generateOpenAiBrief(stock),
+      config.timeouts.request,
+      'OpenAI request timed out'
+    );
     if (openAiBrief) return openAiBrief;
   } catch (err) {
     console.error(`[AI Summary] OpenAI generation failed for ${stock.ticker}: ${err.message}`);
@@ -179,4 +200,5 @@ async function generateAiCompanyBrief(stock) {
 
 module.exports = {
   generateAiCompanyBrief,
+  buildFallbackAiBrief,
 };
