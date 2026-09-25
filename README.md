@@ -1,144 +1,48 @@
-# InvestIQ — AI Investment Research Agent for Indian Equities
+# InvestIQ — AI Investment Research Platform for Indian Equities
 
-> A Next.js 14 platform that runs a multi-agent LangGraph pipeline (research → analyze → decide) over Gemini and Tavily Search to produce institutional-style equity research reports on Indian stocks, backed by a real quantitative ML engine (Random Forest / Gradient Boosting on technical indicators) and a client-side DCF valuation tool.
+> A full-stack investment research platform for Indian stocks combining live NSE market data, AI-generated company briefs, technical signal analysis, and financial performance tracking.
 
 **Tagline:** *Search a ticker. Get a verdict — backed by data, not vibes.*
-
----
-## 🎯 Problem Statement
-
-Retail investors in India either rely on scattered broker notes and forum "tips," or pay for institutional research they don't have access to. There's no single place that combines live market data, AI-generated qualitative research, and an honestly-validated quantitative signal in one report — most "AI stock picker" tools either hide their model's real accuracy or skip data-driven signals entirely. InvestIQ centralizes this: a LangGraph research agent gathers and synthesizes news/fundamentals, a trained ML engine scores short-term direction with disclosed AUC (not fake confidence), and a DCF tool lets the user stress-test the valuation themselves.
-
-
----
-
-## ✨ Key Features
-
-- 🔎 **Ticker-based research agent** — LangGraph state machine (research → analyze → decide) using Gemini for synthesis and Tavily Search for live web/news context
-- 📊 **Quantitative ML signal engine** — RandomForest/GradientBoosting/LogisticRegression classifiers on technical indicators (RSI-14, MACD histogram, %-above-SMA50/200, NATR volatility), multi-horizon targets (5/21/60-day), walk-forward validated
-- 🧪 **Honest signal labeling** — surfaces real backtested AUC (~0.53 "weak edge") and recent-fold-only strength instead of inflated confidence scores
-- 💹 **Real market data** — Financial Modeling Prep integration for live fundamentals/pricing
-- 🧮 **Interactive DCF valuation tool** — lets the user adjust growth/discount assumptions and see fair value recompute client-side
-- 🏛️ **Institutional-style report page** — dossier-format writeup with decision (INVEST/PASS), reasoning, source citations, and market snapshot (NIFTY 50, SENSEX, USD/INR, India VIX)
-- 🎯 **Top picks & sector heatmap** on the dashboard
-- 🧵 **Full agent trace logs** — every research step is logged and shown, not a black box
-- 🐍 **Standalone Python ML pipeline** — `ml:data` → `ml:train` → `ml:predict` scripts, separate from the Next.js app
-- 🔐 *(planned)* Persistence + auth via Supabase — save reports per user instead of localStorage-only
-
----
-
-## 👥 Roles
-
-| Role                   | Responsibilities                                                             |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| Sumit Raj Verma        | Front-end                                                                    |
-| Nitin                  | Cloud                                                                        |
-| Aditya Pratap Singh    | AI/ML                                                                        |
-| Ritesh                 | Cloud                                                                        |
-| Tanish Yadav           | Backend                                                                      |
-| Aashu Singh             | Backend                                                                      |
----
-
-
-## 🧠 Core Pipeline
-
-### 1. Research Agent (LangGraph)
-
-A 3-node compiled state graph:
-
-```
-START → research → analyze → makeDecision → END
-```
-
-- **research** — queries Tavily for live news/context on the company, appends to a growing `searchResults[]` log
-- **analyze** — sends aggregated research to Gemini, produces `analysisReport`
-- **makeDecision** — Gemini reduces the analysis to a final `decision` (`INVEST` / `PASS`) with `reasoning`
-
-State is a single `AgentState` object threaded through every node (company name, logs, search results, report, decision, reasoning, error).
-
-### 2. ML Signal Scoring
-
-```
-signalScore = trained_classifier(technicalIndicators) → probability by horizon (5d / 21d / 60d)
-```
-
-Trained per-ticker on historical OHLCV panel data (10 large-cap NSE tickers), 3-fold walk-forward validated to avoid lookahead leakage, model selected by AUC per horizon. Best result: GradientBoosting @ 21-day horizon, avg AUC 0.533 — reported as-is, including the fact that the edge fades in the most recent fold.
-
-### 3. DCF Valuation
-
-Client-side discounted cash flow calculator on the report page — user-adjustable growth/discount/terminal-value inputs recompute fair value instantly, no server round-trip.
 
 ---
 
 ## 🏗️ System Architecture
 
-```mermaid
-flowchart TB
-    subgraph Client["Client Layer"]
-        A1[Dashboard - app/page.tsx]
-        A2[Report Page - app/report]
-        A3[Interactive DCF Tool]
-    end
-
-    subgraph Server["Next.js 14 App Router - Route Handlers"]
-        B1[/api/agent - LangGraph Research Endpoint/]
-        B2[/api/ml - ML Prediction and Metrics Endpoint/]
-    end
-
-    subgraph Agent["LangGraph Research Agent"]
-        C1[research node]
-        C2[analyze node]
-        C3[makeDecision node]
-    end
-
-    subgraph ML["Python ML Engine - ml/"]
-        D1[data_loader.py - Yahoo Finance OHLCV]
-        D2[feature_engineering.py - RSI, MACD, ATR, SMA]
-        D3[train.py - RF / GBM / LogReg, walk-forward CV]
-        D4[predict.py - latest_predictions.json cache]
-    end
-
-    subgraph External["External Services"]
-        E1[Google Gemini API]
-        E2[Tavily Search API]
-        E3[Financial Modeling Prep API]
-    end
-
-    A1 --> B1
-    A2 --> B1
-    A1 --> B2
-    A2 --> B2
-
-    B1 --> C1 --> C2 --> C3
-    C1 --> E2
-    C2 --> E1
-    C3 --> E1
-    B1 --> E3
-
-    D1 --> D2 --> D3 --> D4
-    B2 --> D4
 ```
+┌─────────────────┐     ┌──────────────────┐     ┌────────────────────┐
+│   React/Vite    │────▶│  Express Backend │────▶│   MongoDB Atlas    │
+│   Frontend      │     │   (Port 5000)    │     │   (Persistent)     │
+└─────────────────┘     └────────┬─────────┘     └────────────────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    ▼            ▼            ▼
+              ┌──────────┐ ┌───────────┐ ┌──────────┐
+              │   NSE    │ │ FastAPI   │ │  Groww   │
+              │  (stock- │ │  Python   │ │  (Finan- │
+              │ nse-india)│ │ (yfinance)│ │  cials)  │
+              └──────────┘ └───────────┘ └──────────┘
+```
+
+**Tech Stack:**
+- **Frontend:** React 18, Vite, Tailwind CSS, Recharts, Clerk Auth, React Router
+- **Backend:** Node.js, Express, MongoDB/Mongoose, Helmet, CORS
+- **Data Service:** Python, FastAPI, yfinance, pandas, scikit-learn
+- **External APIs:** NSE India (stock-nse-india), Groww, OpenAI (optional)
 
 ---
 
-## 📊 Data Flow — Report Generation
+## ✨ Key Features
 
-```mermaid
-flowchart LR
-    User((User)) -- Enter ticker/company --> UI[Dashboard]
-    UI --> API[/api/agent/]
-    API --> Research[1.0 Research - Tavily]
-    Research --> Analyze[2.0 Analyze - Gemini]
-    Analyze --> Decide[3.0 Decision - Gemini]
-    API --> MLCache[(latest_predictions.json)]
-    MLCache --> API
-    Decide --> Report[Report Page]
-    MLCache --> Report
-    Report -- Adjust assumptions --> DCF[Client-side DCF Recalc]
-    Report --> User
-```
-
-> Diagrams reflect the current Next.js 14 architecture. The legacy Express/Vite server in `server/` is kept as a secondary backend and is not part of the primary flow above.
+| Feature | Description |
+|---------|-------------|
+| **Live NSE Data** | Real-time prices via `stock-nse-india`, fallback to yfinance |
+| **Technical Signal Engine** | SMA50/200, RSI-14, 5yr CAGR, sector-relative P/E → BUY/HOLD/AVOID |
+| **AI Company Briefs** | Structured summaries via OpenAI (with local fallback) |
+| **90-Day Predictions** | LinearRegression on 5yr close prices with R² score |
+| **Financial Performance** | Quarterly/yearly revenue & profit, fundamentals, shareholding |
+| **Watchlist** | Multi-list watchlist with real-time signals, sparklines, 52W range |
+| **Multi-layer Caching** | In-memory → MongoDB (15min TTL) → external providers |
+| **Resilient Fallbacks** | Graceful degradation when any provider fails |
 
 ---
 
@@ -146,67 +50,201 @@ flowchart LR
 
 ### Prerequisites
 
-- Node.js (v18+)
-- Python 3.9+ (for the ML pipeline)
-- API keys: Google Gemini, Tavily Search, Financial Modeling Prep (optional)
+- Node.js 18+
+- Python 3.9+
+- MongoDB (local or Atlas)
+- Optional: OpenAI API key for AI summaries
 
-### Setup
+### Local Setup
 
 ```bash
 # Clone the repo
 git clone <your-repo-url>
-cd "AI Investment Research Agent"
+cd InvestIQ-
 
-# Install Node dependencies
-npm install
+# Install all dependencies
+npm run install:all
 
-# (Optional) Install Python ML dependencies
-cd ml && pip install -r requirements.txt && cd ..
+# Install Python data service dependencies
+cd data-service && pip install -r requirements.txt && cd ..
+
+# Copy environment files
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+
+# Start MongoDB (if local)
+mongod
+
+# Seed database with top NSE stocks (optional)
+npm run seed
+
+# Start all services
+# Terminal 1: Python data service
+cd data-service && uvicorn app:app --host 0.0.0.0 --port 8000
+
+# Terminal 2: Express backend
+npm run dev:backend
+
+# Terminal 3: Frontend
+npm run dev:frontend
 ```
 
 ### Environment Variables
 
-Copy `.env.local.example` to `.env.local`:
-
-```bash
-cp .env.local.example .env.local
-```
-
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
-FMP_API_KEY=your_fmp_api_key_here
+**Backend (`backend/.env`):**
+```env
 NODE_ENV=development
-PORT=3000
+PORT=5000
+HOST=0.0.0.0
+MONGO_URI=mongodb://localhost:27017/investiq
+PYTHON_DATA_SERVICE_URL=http://localhost:8000
+FRONTEND_URL=http://localhost:5173
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4o-mini
+NSE_CACHE_TTL_SECONDS=900
+AI_CACHE_TTL_SECONDS=21600
+HISTORY_CACHE_TTL_SECONDS=900
+REQUEST_TIMEOUT_MS=15000
+PYTHON_REQUEST_TIMEOUT_MS=30000
 ```
 
-### Run locally
-
-```bash
-# App
-npm run dev
-
-# ML pipeline (optional, run in order)
-npm run ml:data
-npm run ml:train
-npm run ml:predict
+**Frontend (`frontend/.env`):**
+```env
+VITE_API_BASE_URL=http://localhost:5000/api
 ```
 
 ---
 
-## 🗓️ Build Roadmap
+## 📡 API Endpoints
 
-- [x] LangGraph research agent (research → analyze → decide)
-- [x] Real market-data API integration (FMP)
-- [x] Python ML engine — technical-indicator classifiers, walk-forward validated
-- [x] Interactive DCF valuation tool
-- [ ] Port DCF tool back into the live Next.js report page (currently only in legacy `server/`)
-- [ ] Persistence + auth (Supabase — Postgres + Auth)
-- [ ] Automated tests across agent + ML pipeline
-- [ ] Source citations inline in the generated report
-- [ ] API rate limiting
-- [ ] Multi-stage DCF (bear/base/bull scenarios)
-- [ ] Report versioning / diffing
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Basic health check |
+| GET | `/api/ready` | Readiness check (DB + Python service) |
+| GET | `/api/version` | API version info |
+| GET | `/api/stocks/:ticker` | Full stock profile + signal |
+| GET | `/api/stocks/:ticker/history` | 5-year price history |
+| GET | `/api/stocks/:ticker/prediction` | 90-day price prediction |
+| GET | `/api/stocks/:ticker/ai-summary` | AI-generated company brief |
+| GET | `/api/stocks/:ticker/financials` | Financials, fundamentals, shareholding |
+
+**Response Format:**
+```json
+{
+  "success": true,
+  "data": { ... },
+  "meta": {
+    "timestamp": "2026-09-25T...",
+    "cached": false,
+    "stale": false
+  }
+}
+```
+
+**Error Format:**
+```json
+{
+  "success": false,
+  "error": "Human readable message",
+  "code": "ERROR_CODE",
+  "status": 404,
+  "requestId": "..."
+}
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Backend tests
+npm run test:backend
+
+# Frontend tests (if configured)
+npm run test:frontend
+```
+
+---
+
+## 🚢 Render Deployment
+
+### Backend (Web Service)
+- **Root Directory:** `backend`
+- **Build Command:** `npm install`
+- **Start Command:** `npm start`
+- **Health Check Path:** `/api/health`
+- **Environment Variables:** See `render.yaml`
+
+### Python Data Service (Web Service)
+- **Root Directory:** `data-service`
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `uvicorn app:app --host 0.0.0.0 --port $PORT`
+- **Health Check Path:** `/health`
+
+### Frontend (Vercel)
+- **Framework Preset:** Vite
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Environment Variable:** `VITE_API_BASE_URL=https://your-backend.onrender.com/api`
+
+---
+
+## 📁 Project Structure
+
+```
+InvestIQ-/
+├── backend/
+│   ├── config/
+│   │   ├── db.js           # MongoDB connection with retry
+│   │   └── env.js          # Centralized config
+│   ├── middleware/
+│   │   ├── errorHandler.js
+│   │   ├── notFound.js
+│   │   ├── requestLogger.js
+│   │   └── validation.js
+│   ├── models/
+│   │   └── Stock.js        # Stock schema with history & predictions
+│   ├── routes/
+│   │   ├── healthRoutes.js
+│   │   └── stockRoutes.js
+│   ├── services/
+│   │   ├── nseService.js           # NSE data with fallback
+│   │   ├── pythonDataService.js    # FastAPI client
+│   │   ├── growwService.js         # Financial data
+│   │   ├── signalEngine.js         # Technical analysis
+│   │   └── aiSummaryService.js     # AI company briefs
+│   ├── utils/
+│   │   ├── normalizeTicker.js
+│   │   ├── safeNumber.js
+│   │   ├── timeout.js
+│   │   └── response.js
+│   ├── tests/
+│   ├── server.js
+│   ├── seed.js
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   └── data/
+│   └── package.json
+├── data-service/
+│   ├── app.py              # FastAPI service
+│   └── requirements.txt
+├── render.yaml             # Render deployment config
+└── package.json            # Root scripts
+```
+
+---
+
+## ⚠️ Important Notes
+
+- **No Fake Data:** Never returns fabricated stock prices or financial figures
+- **Graceful Degradation:** Returns stale cached data with `stale: true` metadata when providers fail
+- **Rate Limits:** Respects provider limits with timeouts and retries
+- **Security:** API keys only on backend, Helmet headers, restricted CORS
+- **Investment Disclaimer:** All signals and predictions are algorithmic estimates, not financial advice
 
 ---
 

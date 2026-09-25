@@ -1,37 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const Stock = require('../models/Stock');
+const config = require('../config/env');
 const {
   fetchStockFromPythonService,
   fetchPredictionFromPythonService,
-  normalizeSymbol,
   PythonDataServiceError,
 } = require('../services/pythonDataService');
 const { fetchAndSaveStock, buildOfflineStockData } = require('../services/nseService');
 const { generateAiCompanyBrief } = require('../services/aiSummaryService');
 const { computeSignal } = require('../services/signalEngine');
 const { getStockFinancials } = require('../services/growwService');
+const { validateTicker } = require('../middleware/validation');
+const { successResponse, errorResponse } = require('../utils/response');
 
-// Cache validity: 15 minutes (Requirement 4)
-const CACHE_TTL_MS = 15 * 60 * 1000;
-
-/**
- * Validate ticker input: only allow letters and numbers (with optional .NS/.BO suffix)
- */
-function isValidTicker(rawTicker) {
-  if (!rawTicker || typeof rawTicker !== 'string') return false;
-  const stripped = normalizeSymbol(rawTicker);
-  // NSE tickers can include letters, numbers, ampersands, and hyphens.
-  return /^[A-Z0-9&-]+$/i.test(stripped);
-}
-
-async function saveStockDocument(stockData) {
-  return Stock.findOneAndUpdate(
-    { ticker: stockData.ticker },
-    stockData,
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
-}
+const CACHE_TTL_MS = config.cacheTtl.nse;
 
 function stockToResponse(stock, stale = false, dataSource = 'live') {
   const dataObj = stock?.toObject ? stock.toObject() : { ...stock };
@@ -58,20 +41,8 @@ async function savePrediction(ticker, predictionData) {
   );
 }
 
-// @route   GET /api/stocks/:ticker/prediction
-// @desc    Get 90-day predicted close trend from Python data service with MongoDB cache
-// @access  Public
-router.get('/:ticker/prediction', async (req, res) => {
-  const rawTicker = req.params.ticker;
-
-  if (!isValidTicker(rawTicker)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid ticker symbol. Only valid NSE ticker characters allowed.',
-    });
-  }
-
-  const cleanTicker = normalizeSymbol(rawTicker);
+router.get('/:ticker/prediction', validateTicker, async (req, res) => {
+  const cleanTicker = req.validatedTicker;
 
   try {
     let stock = await Stock.findOne({ ticker: cleanTicker });
@@ -82,252 +53,199 @@ router.get('/:ticker/prediction', async (req, res) => {
     const isPredictionFresh = hasPrediction && (Date.now() - predictionFetched < CACHE_TTL_MS);
 
     if (isPredictionFresh) {
-      return res.status(200).json({
-        success: true,
+      return res.status(200).json(successResponse({
         ticker: stock.ticker,
         predictions: stock.prediction.predictions,
         r2Score: stock.prediction.r2Score,
+        model: 'LinearRegression',
+        horizonDays: 90,
         stale: false,
-      });
+      }));
     }
 
     try {
-      const predictionData = await fetchPredictionFromPythonService(rawTicker);
+      const predictionData = await fetchPredictionFromPythonService(cleanTicker);
       const updatedStock = await savePrediction(cleanTicker, predictionData);
 
-      return res.status(200).json({
-        success: true,
+      return res.status(200).json(successResponse({
         ticker: updatedStock.ticker,
         predictions: updatedStock.prediction.predictions,
         r2Score: updatedStock.prediction.r2Score,
+        model: 'LinearRegression',
+        horizonDays: 90,
         stale: false,
-      });
+      }));
     } catch (fetchErr) {
       console.error(`[StockRoutes] Prediction fetch failed for ${cleanTicker}: ${fetchErr.message}`);
 
       if (hasPrediction) {
-        return res.status(200).json({
-          success: true,
+        return res.status(200).json(successResponse({
           ticker: stock.ticker,
           predictions: stock.prediction.predictions,
           r2Score: stock.prediction.r2Score,
+          model: 'LinearRegression',
+          horizonDays: 90,
           stale: true,
-        });
+        }));
       }
 
       const status = fetchErr instanceof PythonDataServiceError ? fetchErr.status : 502;
-      return res.status(status).json({
-        success: false,
-        error: status === 404
+      return res.status(status).json(errorResponse(
+        status === 404
           ? `No stock data found for ${cleanTicker}.`
           : 'Prediction data temporarily unavailable, please try again.',
-      });
+        'PREDICTION_UNAVAILABLE',
+        status,
+        req.id
+      ));
     }
   } catch (err) {
     console.error(`[StockRoutes] Unexpected error processing prediction for ${cleanTicker}:`, err);
-    return res.status(500).json({
-      success: false,
-      error: 'An unexpected server error occurred.',
-    });
+    return res.status(500).json(errorResponse('An unexpected server error occurred.', 'INTERNAL_ERROR', 500, req.id));
   }
 });
 
-// @route   GET /api/stocks/:ticker/ai-summary
-// @desc    Generate an AI company brief from stock/profile data
-// @access  Public
-router.get('/:ticker/ai-summary', async (req, res) => {
-  const rawTicker = req.params.ticker;
-
-  if (!isValidTicker(rawTicker)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid ticker symbol. Only valid NSE ticker characters allowed.',
-    });
-  }
-
-  const cleanTicker = normalizeSymbol(rawTicker);
+router.get('/:ticker/ai-summary', validateTicker, async (req, res) => {
+  const cleanTicker = req.validatedTicker;
 
   try {
     let stock = await Stock.findOne({ ticker: cleanTicker });
 
     if (!stock) {
       try {
-        const freshStockData = await fetchStockFromPythonService(rawTicker);
-        stock = await saveStockDocument(freshStockData);
+        const freshStockData = await fetchStockFromPythonService(cleanTicker);
+        stock = await Stock.findOneAndUpdate(
+          { ticker: cleanTicker },
+          freshStockData,
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
       } catch (fetchErr) {
         console.error(`[AI Summary] Live fetch failed for ${cleanTicker}: ${fetchErr.message}`);
-        stock = await saveStockDocument(buildOfflineStockData(cleanTicker));
+        const offlineData = buildOfflineStockData(cleanTicker);
+        stock = await Stock.findOneAndUpdate(
+          { ticker: cleanTicker },
+          offlineData,
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
       }
     }
 
     const stockData = stockToResponse(stock, false, stock.dataSource || 'profile');
     const aiSummary = await generateAiCompanyBrief(stockData);
 
-    return res.status(200).json({
-      success: true,
+    return res.status(200).json(successResponse({
       ticker: cleanTicker,
       aiSummary,
-    });
+    }, { cached: false }));
   } catch (err) {
     console.error(`[AI Summary] Unexpected error for ${cleanTicker}:`, err);
-    return res.status(500).json({
-      success: false,
-      error: 'Unable to generate AI company summary.',
-    });
+    return res.status(500).json(errorResponse('Unable to generate AI company summary.', 'AI_SUMMARY_ERROR', 500, req.id));
   }
 });
 
-// @route   GET /api/stocks/:ticker/financials
-// @desc    Get real company quarterly and yearly financials (revenue, profit, growth, fundamentals, shareholding)
-// @access  Public
-router.get('/:ticker/financials', async (req, res) => {
-  const rawTicker = req.params.ticker;
-
-  if (!isValidTicker(rawTicker)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid ticker symbol. Only valid NSE ticker characters allowed.',
-    });
-  }
-
-  const cleanTicker = normalizeSymbol(rawTicker);
+router.get('/:ticker/financials', validateTicker, async (req, res) => {
+  const cleanTicker = req.validatedTicker;
 
   try {
     const data = await getStockFinancials(cleanTicker);
-    return res.status(200).json({
-      success: true,
+    return res.status(200).json(successResponse({
       ticker: cleanTicker,
-      data,
-    });
+      financials: data,
+      source: 'groww',
+      cached: false,
+    }));
   } catch (err) {
     console.error(`[Financials] Error for ${cleanTicker}:`, err.message);
-    return res.status(500).json({
-      success: false,
-      error: 'Unable to fetch financial performance data.',
-    });
+    return res.status(500).json(errorResponse('Unable to fetch financial performance data.', 'FINANCIALS_ERROR', 500, req.id));
   }
 });
 
-// @route   GET /api/stocks/:ticker
-// @desc    Get stock by ticker symbol (checks MongoDB cache, fallback to Python yfinance service)
-// @access  Public
-router.get('/:ticker', async (req, res) => {
-  const rawTicker = req.params.ticker;
-
-  // 6. Basic input validation: reject tickers with invalid characters before calling NSE
-  if (!isValidTicker(rawTicker)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid ticker symbol. Only alphanumeric characters allowed.',
-    });
-  }
-
-  const cleanTicker = normalizeSymbol(rawTicker);
+router.get('/:ticker', validateTicker, async (req, res) => {
+  const cleanTicker = req.validatedTicker;
 
   try {
-    // 4a. Check MongoDB cache first
     let stock = await Stock.findOne({ ticker: cleanTicker });
 
     const now = Date.now();
     const lastFetched = stock && stock.lastFetchedAt ? new Date(stock.lastFetchedAt).getTime() : 0;
     const isCacheFresh = stock && (now - lastFetched < CACHE_TTL_MS);
 
-    // 4b. If fresh cached copy exists, serve from cache
     if (isCacheFresh) {
       console.log(`[Cache HIT] Serving cached data for ${cleanTicker} (cached ${Math.round((now - lastFetched) / 1000)}s ago)`);
-      return res.status(200).json({
-        success: true,
-        data: stockToResponse(stock, false, 'cache'),
-        stale: false,
-      });
+      return res.status(200).json(successResponse(
+        stockToResponse(stock, false, 'cache'),
+        { cached: true, stale: false }
+      ));
     }
 
-    // 4c. Missing or older than 15 minutes: call FastAPI service for price + summary + history
-    console.log(`[Cache MISS/EXPIRED] Fetching fresh yfinance data for ${cleanTicker}...`);
+    console.log(`[Cache MISS/EXPIRED] Fetching fresh data for ${cleanTicker}...`);
     try {
-      const freshStockData = await fetchStockFromPythonService(rawTicker);
-      const freshStock = await saveStockDocument(freshStockData);
+      const freshStockData = await fetchStockFromPythonService(cleanTicker);
+      const freshStock = await Stock.findOneAndUpdate(
+        { ticker: cleanTicker },
+        freshStockData,
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
 
-      return res.status(200).json({
-        success: true,
-        data: stockToResponse(freshStock, false, 'yfinance'),
-        stale: false,
-      });
+      return res.status(200).json(successResponse(
+        stockToResponse(freshStock, false, 'yfinance'),
+        { cached: false, stale: false }
+      ));
     } catch (fetchErr) {
       console.error(`[StockRoutes] Live fetch failed for ${cleanTicker}: ${fetchErr.message}`);
 
       try {
         const fallbackStock = await fetchAndSaveStock(cleanTicker);
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(fallbackStock, false, 'nse-fallback'),
-          stale: false,
-          warning: 'Served company details from NSE fallback data because yfinance was unavailable.',
-        });
+        return res.status(200).json(successResponse(
+          stockToResponse(fallbackStock, false, 'nse-fallback'),
+          { cached: false, stale: false, warning: 'Served company details from NSE fallback data because yfinance was unavailable.' }
+        ));
       } catch (fallbackErr) {
         console.error(`[StockRoutes] NSE fallback failed for ${cleanTicker}: ${fallbackErr.message}`);
       }
 
-      // 4d. If live fetch fails but cached copy exists (even if stale), return stale copy with "stale": true
       if (stock) {
         console.log(`[Cache FALLBACK] Serving stale cached data for ${cleanTicker} with stale: true`);
-
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(stock, true, 'stale-cache'),
-          stale: true,
-        });
+        return res.status(200).json(successResponse(
+          stockToResponse(stock, true, 'stale-cache'),
+          { cached: true, stale: true }
+        ));
       }
 
       try {
-        const offlineStock = await saveStockDocument(buildOfflineStockData(cleanTicker));
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(offlineStock, true, 'offline-profile'),
-          stale: true,
-          warning: 'Served an offline company profile because live market data was unavailable.',
-        });
+        const offlineStock = await Stock.findOneAndUpdate(
+          { ticker: cleanTicker },
+          buildOfflineStockData(cleanTicker),
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        return res.status(200).json(successResponse(
+          stockToResponse(offlineStock, true, 'offline-profile'),
+          { cached: false, stale: true, warning: 'Served an offline company profile because live market data was unavailable.' }
+        ));
       } catch (offlineErr) {
         console.error(`[StockRoutes] Offline profile fallback failed for ${cleanTicker}: ${offlineErr.message}`);
       }
 
-      // 4e. If live fetch fails AND there's no cache, return HTTP 502
       const status = fetchErr instanceof PythonDataServiceError ? fetchErr.status : 502;
-      return res.status(status).json({
-        success: false,
-        error: status === 404
+      return res.status(status).json(errorResponse(
+        status === 404
           ? `No stock data found for ${cleanTicker}.`
           : 'Live data temporarily unavailable, please try again.',
-      });
+        'STOCK_UNAVAILABLE',
+        status,
+        req.id
+      ));
     }
   } catch (err) {
-    // 4f. Never crash the server on a bad ticker
     console.error(`[StockRoutes] Unexpected error processing ${cleanTicker}:`, err);
-    return res.status(500).json({
-      success: false,
-      error: 'An unexpected server error occurred.',
-    });
+    return res.status(500).json(errorResponse('An unexpected server error occurred.', 'INTERNAL_ERROR', 500, req.id));
   }
 });
 
-// @route   GET /api/stocks/:ticker/history
-// @desc    Get 5-year historical price data for a stock with stale-cache-fallback
-// @access  Public
-router.get('/:ticker/history', async (req, res) => {
-  const rawTicker = req.params.ticker;
-
-  // 6. Basic input validation
-  if (!isValidTicker(rawTicker)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Invalid ticker symbol. Only alphanumeric characters allowed.',
-    });
-  }
-
-  const cleanTicker = normalizeSymbol(rawTicker);
+router.get('/:ticker/history', validateTicker, async (req, res) => {
+  const cleanTicker = req.validatedTicker;
 
   try {
-    // 5. Check MongoDB cache first
     let stock = await Stock.findOne({ ticker: cleanTicker });
 
     const now = Date.now();
@@ -336,71 +254,66 @@ router.get('/:ticker/history', async (req, res) => {
 
     if (isCacheFresh) {
       console.log(`[Cache HIT] Serving cached history for ${cleanTicker}`);
-      return res.status(200).json({
-        success: true,
+      return res.status(200).json(successResponse({
         ticker: stock.ticker,
         name: stock.name,
         history5y: stock.history5y,
         stale: false,
-      });
+      }, { cached: true }));
     }
 
-    // Try live fetch
-    console.log(`[Cache MISS/EXPIRED] Fetching fresh live history for ${cleanTicker}...`);
+    console.log(`[Cache MISS/EXPIRED] Fetching fresh history for ${cleanTicker}...`);
     try {
-      const freshStockData = await fetchStockFromPythonService(rawTicker);
-      const freshStock = await saveStockDocument(freshStockData);
-      return res.status(200).json({
-        success: true,
+      const freshStockData = await fetchStockFromPythonService(cleanTicker);
+      const freshStock = await Stock.findOneAndUpdate(
+        { ticker: cleanTicker },
+        freshStockData,
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      return res.status(200).json(successResponse({
         ticker: freshStock.ticker,
         name: freshStock.name,
         history5y: freshStock.history5y || [],
         stale: false,
-      });
+      }, { cached: false }));
     } catch (fetchErr) {
       console.error(`[StockRoutes] Live fetch failed for history of ${cleanTicker}: ${fetchErr.message}`);
 
       try {
         const fallbackStock = await fetchAndSaveStock(cleanTicker);
-        return res.status(200).json({
-          success: true,
+        return res.status(200).json(successResponse({
           ticker: fallbackStock.ticker,
           name: fallbackStock.name,
           history5y: fallbackStock.history5y || [],
           stale: false,
-          warning: 'Served history from NSE fallback data because yfinance was unavailable.',
-        });
+        }, { cached: false, warning: 'Served history from NSE fallback data because yfinance was unavailable.' }));
       } catch (fallbackErr) {
         console.error(`[StockRoutes] NSE fallback failed for history of ${cleanTicker}: ${fallbackErr.message}`);
       }
 
-      // Stale fallback
       if (stock && stock.history5y && stock.history5y.length > 0) {
         console.log(`[Cache FALLBACK] Serving stale cached history for ${cleanTicker} with stale: true`);
-        return res.status(200).json({
-          success: true,
+        return res.status(200).json(successResponse({
           ticker: stock.ticker,
           name: stock.name,
           history5y: stock.history5y,
           stale: true,
-        });
+        }, { cached: true, stale: true }));
       }
 
-      // No cache at all -> HTTP 502
       const status = fetchErr instanceof PythonDataServiceError ? fetchErr.status : 502;
-      return res.status(status).json({
-        success: false,
-        error: status === 404
+      return res.status(status).json(errorResponse(
+        status === 404
           ? `No stock data found for ${cleanTicker}.`
           : 'Live data temporarily unavailable, please try again.',
-      });
+        'HISTORY_UNAVAILABLE',
+        status,
+        req.id
+      ));
     }
   } catch (err) {
     console.error(`[StockRoutes] Unexpected error processing history for ${cleanTicker}:`, err);
-    return res.status(500).json({
-      success: false,
-      error: 'An unexpected server error occurred.',
-    });
+    return res.status(500).json(errorResponse('An unexpected server error occurred.', 'INTERNAL_ERROR', 500, req.id));
   }
 });
 

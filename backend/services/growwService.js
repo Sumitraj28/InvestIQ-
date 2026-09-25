@@ -4,8 +4,11 @@
  * fundamentals, and shareholding pattern for Indian equity stocks.
  */
 
+const config = require('../config/env');
+const { withTimeout } = require('../utils/timeout');
+
 const cache = new Map();
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache
+const CACHE_TTL_MS = config.cacheTtl.history || 60 * 60 * 1000;
 
 function formatGrowth(current, previous) {
   if (!previous || previous === 0) return { percent: 0, isPositive: true, formatted: '+0.00%' };
@@ -19,10 +22,28 @@ function formatGrowth(current, previous) {
   };
 }
 
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeouts.request);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`Groww API request timed out after ${config.timeouts.request}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchFromGroww(cleanSymbol) {
-  // 1. Search entity on Groww
   const searchUrl = `https://groww.in/v1/api/search/v1/entity?app=false&entity_type=stocks&page=0&q=${encodeURIComponent(cleanSymbol)}&size=1`;
-  const searchRes = await fetch(searchUrl, {
+  const searchRes = await fetchWithTimeout(searchUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       Accept: 'application/json',
@@ -39,9 +60,8 @@ async function fetchFromGroww(cleanSymbol) {
     throw new Error(`Groww searchId not found for ${cleanSymbol}`);
   }
 
-  // 2. Fetch full company details by search_id
   const companyUrl = `https://groww.in/v1/api/stocks_data/v1/company/search_id/${searchId}`;
-  const compRes = await fetch(companyUrl, {
+  const compRes = await fetchWithTimeout(companyUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       Accept: 'application/json',
@@ -59,7 +79,6 @@ async function fetchFromGroww(cleanSymbol) {
   const profObj = stmts.find((s) => s.title?.toLowerCase().includes('profit'));
   const netWorthObj = stmts.find((s) => s.title?.toLowerCase().includes('net worth'));
 
-  // Parse Yearly Data (last 3-5 years)
   const yearlyYears = Object.keys(revObj?.yearly || {}).sort();
   const yearlyList = yearlyYears.slice(-5).map((y) => {
     const rev = Number(revObj?.yearly?.[y] || 0);
@@ -72,7 +91,6 @@ async function fetchFromGroww(cleanSymbol) {
     };
   });
 
-  // Parse Quarterly Data (last 5 quarters)
   const quarterlyQuarters = Object.keys(revObj?.quarterly || {});
   const quarterlyList = quarterlyQuarters.slice(-5).map((q) => {
     const rev = Number(revObj?.quarterly?.[q] || 0);
@@ -85,19 +103,16 @@ async function fetchFromGroww(cleanSymbol) {
     };
   });
 
-  // Calculate Summary metrics for Yearly
   const latestYear = yearlyList[yearlyList.length - 1];
   const prevYear = yearlyList.length > 1 ? yearlyList[yearlyList.length - 2] : null;
   const yearlyRevGrowth = formatGrowth(latestYear?.revenue || 0, prevYear?.revenue);
   const yearlyProfitGrowth = formatGrowth(latestYear?.profit || 0, prevYear?.profit);
 
-  // Calculate Summary metrics for Quarterly
   const latestQuarter = quarterlyList[quarterlyList.length - 1];
   const prevQuarter = quarterlyList.length > 1 ? quarterlyList[quarterlyList.length - 2] : null;
   const quarterlyRevGrowth = formatGrowth(latestQuarter?.revenue || 0, prevQuarter?.revenue);
   const quarterlyProfitGrowth = formatGrowth(latestQuarter?.profit || 0, prevQuarter?.profit);
 
-  // Parse Fundamentals
   const fundamentalsRaw = compData?.fundamentals || [];
   const fundamentalsMap = {};
   fundamentalsRaw.forEach((f) => {
@@ -106,14 +121,12 @@ async function fetchFromGroww(cleanSymbol) {
     }
   });
 
-  // Parse Shareholding Pattern
   const shpRaw = compData?.shareHoldingPattern || {};
   const shpPeriods = Object.keys(shpRaw);
   let latestShp = null;
   if (shpPeriods.length > 0) {
     const latestPeriodKey = shpPeriods[0];
     const pData = shpRaw[latestPeriodKey];
-    // Calculate percentages
     let promotersPct = 0;
     if (pData?.promoters) {
       const p = pData.promoters;
@@ -159,9 +172,6 @@ async function fetchFromGroww(cleanSymbol) {
   };
 }
 
-/**
- * Main function: get real financials with in-memory caching and graceful error handling
- */
 async function getStockFinancials(ticker) {
   if (!ticker) throw new Error('Ticker is required');
   const clean = ticker.replace(/\.(NS|BO)$/i, '').trim().toUpperCase();
@@ -172,12 +182,15 @@ async function getStockFinancials(ticker) {
   }
 
   try {
-    const data = await fetchFromGroww(clean);
+    const data = await withTimeout(
+      fetchFromGroww(clean),
+      config.timeouts.request,
+      'Groww API request timed out'
+    );
     cache.set(clean, { data, timestamp: Date.now() });
     return data;
   } catch (err) {
     console.warn(`[Groww API] Fetch failed for ${clean}: ${err.message}`);
-    // If cached even if expired, return it
     if (cached) return cached.data;
     throw err;
   }

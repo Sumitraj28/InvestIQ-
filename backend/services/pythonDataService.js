@@ -1,6 +1,5 @@
-function getDataServiceUrl() {
-  return process.env.PYTHON_DATA_SERVICE_URL || 'http://127.0.0.1:8000';
-}
+const config = require('../config/env');
+const { withTimeout } = require('../utils/timeout');
 
 class PythonDataServiceError extends Error {
   constructor(message, status = 502, details = null) {
@@ -11,29 +10,19 @@ class PythonDataServiceError extends Error {
   }
 }
 
-function normalizeSymbol(symbol) {
-  if (!symbol || typeof symbol !== 'string') return '';
-  let clean = symbol.trim().toUpperCase();
-  if (clean.endsWith('.NS') || clean.endsWith('.BO')) {
-    clean = clean.slice(0, -3);
-  }
-  return clean;
-}
-
-function toYFinanceTicker(symbol) {
-  const clean = symbol.trim().toUpperCase();
-  if (clean.endsWith('.NS') || clean.endsWith('.BO')) {
-    return clean;
-  }
-  return `${normalizeSymbol(clean)}.NS`;
+function getDataServiceUrl() {
+  return config.pythonDataServiceUrl;
 }
 
 async function fetchJson(path, options = {}) {
+  const timeoutMs = options.timeoutMs || config.timeouts.pythonRequest;
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 45000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(`${getDataServiceUrl()}${path}`, {
+    const url = `${getDataServiceUrl()}${path}`;
+    const response = await fetch(url, {
       signal: controller.signal,
       method: options.method || 'GET',
       headers: {
@@ -57,7 +46,7 @@ async function fetchJson(path, options = {}) {
     }
 
     const message = err.name === 'AbortError'
-      ? 'Data service request timed out.'
+      ? `Data service request timed out after ${timeoutMs}ms`
       : `Unable to reach Python data service: ${err.message}`;
     throw new PythonDataServiceError(message, 502, null);
   } finally {
@@ -66,6 +55,8 @@ async function fetchJson(path, options = {}) {
 }
 
 async function fetchStockFromPythonService(symbol) {
+  const { normalizeTicker, toYFinanceTicker } = require('../utils/normalizeTicker');
+
   const yfTicker = toYFinanceTicker(symbol);
   const encodedTicker = encodeURIComponent(yfTicker);
 
@@ -76,7 +67,7 @@ async function fetchStockFromPythonService(symbol) {
   ]);
 
   return {
-    ticker: normalizeSymbol(yfTicker),
+    ticker: normalizeTicker(yfTicker),
     name: summary.name,
     sector: summary.sector,
     industry: summary.industry || '',
@@ -94,15 +85,18 @@ async function fetchStockFromPythonService(symbol) {
 }
 
 async function fetchPredictionFromPythonService(symbol) {
+  const { normalizeTicker, toYFinanceTicker } = require('../utils/normalizeTicker');
+
   const yfTicker = toYFinanceTicker(symbol);
   const encodedTicker = encodeURIComponent(yfTicker);
+
   const prediction = await fetchJson(`/predict/${encodedTicker}`, {
     method: 'POST',
-    timeoutMs: 60000,
+    timeoutMs: config.timeouts.pythonRequest * 2,
   });
 
   return {
-    ticker: normalizeSymbol(yfTicker),
+    ticker: normalizeTicker(yfTicker),
     predictions: prediction.predictions || [],
     r2Score: prediction.r2Score,
     lastFetchedAt: new Date(),
@@ -113,6 +107,6 @@ module.exports = {
   PythonDataServiceError,
   fetchStockFromPythonService,
   fetchPredictionFromPythonService,
-  normalizeSymbol,
-  toYFinanceTicker,
+  getDataServiceUrl,
+  fetchJson,
 };

@@ -1,23 +1,70 @@
 const mongoose = require('mongoose');
+const config = require('./env');
 
-const connectDB = async () => {
-  const primaryUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/stocksense';
-  try {
-    const conn = await mongoose.connect(primaryUri);
-    console.log(`[MongoDB] Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.warn(`[MongoDB] Primary connection error: ${error.message}`);
-    if (primaryUri !== 'mongodb://127.0.0.1:27017/stocksense') {
-      try {
-        console.log('[MongoDB] Attempting fallback to local MongoDB (mongodb://127.0.0.1:27017/stocksense)...');
-        const fallbackConn = await mongoose.connect('mongodb://127.0.0.1:27017/stocksense');
-        console.log(`[MongoDB] Connected to local fallback: ${fallbackConn.connection.host}`);
+let isConnected = false;
+
+function getConnectionState() {
+  return mongoose.connection.readyState;
+}
+
+function isDbConnected() {
+  return isConnected && mongoose.connection.readyState === 1;
+}
+
+const connectDB = async (retries = 3, delayMs = 2000) => {
+  const uri = config.mongoUri;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      if (isConnected && mongoose.connection.readyState === 1) {
+        console.log('[MongoDB] Already connected');
         return;
-      } catch (fallbackError) {
-        console.error(`[MongoDB] Local fallback also failed: ${fallbackError.message}`);
+      }
+
+      const conn = await mongoose.connect(uri, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+      });
+
+      isConnected = true;
+      console.log(`[MongoDB] Connected: ${conn.connection.host} (attempt ${attempt}/${retries})`);
+      return;
+    } catch (error) {
+      console.warn(`[MongoDB] Connection attempt ${attempt}/${retries} failed: ${error.message}`);
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
   }
+
+  if (!isConnected) {
+    console.error('[MongoDB] All connection attempts failed. Server will continue but DB operations will fail.');
+  }
 };
 
-module.exports = connectDB;
+mongoose.connection.on('connected', () => {
+  isConnected = true;
+  console.log('[MongoDB] Connection established');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('[MongoDB] Connection error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  isConnected = false;
+  console.warn('[MongoDB] Disconnected');
+});
+
+process.on('SIGINT', async () => {
+  await mongoose.connection.close();
+  console.log('[MongoDB] Connection closed due to app termination');
+  process.exit(0);
+});
+
+module.exports = {
+  connectDB,
+  getConnectionState,
+  isDbConnected,
+};
