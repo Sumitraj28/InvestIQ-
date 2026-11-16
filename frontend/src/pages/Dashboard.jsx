@@ -14,12 +14,22 @@ import {
   Star,
   TrendingUp,
   Wallet,
+  Zap,
 } from 'lucide-react';
 import SearchBar from '../components/SearchBar';
 import CompanyLogo from '../components/CompanyLogo';
-import { getStock } from '../services/api';
+import AddInvestmentModal from '../components/AddInvestmentModal';
+import { getStock, getPortfolioSummary } from '../services/api';
 import { popularTickers } from '../data/popularTickers';
-import { useUser } from '@clerk/react';
+import { useAuth, useUser } from '@clerk/react';
+
+function formatINR(val) {
+  if (val === undefined || val === null || isNaN(Number(val))) return '₹0.00';
+  return `₹${Number(val).toLocaleString('en-IN', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  })}`;
+}
 
 const marketIndices = [
   { name: 'NIFTY 50', value: '25,327.05', change: '+0.41%', positive: true },
@@ -28,22 +38,46 @@ const marketIndices = [
 ];
 
 const products = [
-  { label: 'Stocks', icon: TrendingUp, color: 'bg-emerald-50 text-emerald-700' },
-  { label: 'Mutual Funds', icon: PieChart, color: 'bg-sky-50 text-sky-700' },
-  { label: 'F&O', icon: LineChart, color: 'bg-violet-50 text-violet-700' },
-  { label: 'US Stocks', icon: BarChart3, color: 'bg-amber-50 text-amber-700' },
+  { label: 'Stocks', icon: TrendingUp, color: 'bg-emerald-50 text-emerald-700', path: '/invest' },
+  { label: 'Portfolio', icon: Wallet, color: 'bg-emerald-50 text-emerald-800', path: '/portfolio' },
+  { label: 'Mutual Funds', icon: PieChart, color: 'bg-sky-50 text-sky-700', path: '/invest' },
+  { label: 'F&O', icon: LineChart, color: 'bg-violet-50 text-violet-700', path: '/invest' },
 ];
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useUser();
+  const { getToken } = useAuth();
+
+  const [portfolioSummary, setPortfolioSummary] = useState(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(true);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   const [stocks, setStocks] = useState([
-    { ticker: 'RELIANCE.NS', name: 'Reliance Industries', price: '₹1,240.40', change: '-0.56%', positive: false, sector: 'Energy' },
-    { ticker: 'TCS.NS', name: 'Tata Consultancy Services', price: '₹2,105.00', change: '-1.11%', positive: false, sector: 'Technology' },
-    { ticker: 'INFY.NS', name: 'Infosys Limited', price: '₹1,029.40', change: '-0.88%', positive: false, sector: 'Technology' },
-    { ticker: 'HDFCBANK.NS', name: 'HDFC Bank Limited', price: 'Loading', change: '0.00%', positive: true, sector: 'Financial Services' },
+    { ticker: 'RELIANCE.NS', name: 'Reliance Industries', price: '₹2,985.40', change: '+0.85%', positive: true, sector: 'Energy' },
+    { ticker: 'TCS.NS', name: 'Tata Consultancy Services', price: '₹4,210.00', change: '-0.45%', positive: false, sector: 'Technology' },
+    { ticker: 'INFY.NS', name: 'Infosys Limited', price: '₹1,895.60', change: '+1.15%', positive: true, sector: 'Technology' },
+    { ticker: 'HDFCBANK.NS', name: 'HDFC Bank Limited', price: '₹1,675.20', change: '+0.32%', positive: true, sector: 'Financial Services' },
   ]);
+
+  // Load real user portfolio data
+  const loadPortfolio = async () => {
+    try {
+      const token = await getToken();
+      const res = await getPortfolioSummary(token);
+      if (res?.success) {
+        setPortfolioSummary(res.data);
+      }
+    } catch (err) {
+      console.warn('Dashboard portfolio load:', err);
+    } finally {
+      setPortfolioLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPortfolio();
+  }, [getToken]);
 
   useEffect(() => {
     let isMounted = true;
@@ -84,22 +118,39 @@ export default function Dashboard() {
     };
   }, []);
 
+  const totalInvested = portfolioSummary?.totalInvested || 0;
+  const currentValue = portfolioSummary?.currentValue || 0;
+  const totalPnl = portfolioSummary?.totalPnl || 0;
+  const totalPnlPercent = portfolioSummary?.totalPnlPercent || 0;
+  const isPnlPositive = totalPnl >= 0;
+  const totalHoldings = portfolioSummary?.totalHoldings || 0;
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
       {/* Welcome banner */}
-      <div className="mb-6 rounded-2xl bg-gradient-to-r from-[#0B3D2C] to-[#145A3E] p-6 text-white">
-        <div className="flex items-center justify-between">
+      <div className="mb-6 rounded-2xl bg-gradient-to-r from-[#0B3D2C] to-[#145A3E] p-6 text-white shadow-md">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold sm:text-3xl">
               Welcome back{user?.firstName ? `, ${user.firstName}` : ''} 👋
             </h1>
-            <p className="mt-1 text-sm text-white/70">
-              Here's what's happening in the Indian equity market today.
+            <p className="mt-1 text-sm text-white/80">
+              Analyze Indian equities, invest with top brokers, and manage your portfolio.
             </p>
           </div>
-          <div className="hidden sm:flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold backdrop-blur-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Market Data Online
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/invest')}
+              className="inline-flex items-center gap-2 rounded-xl bg-white text-[#0B3D2C] hover:bg-emerald-50 px-4 py-2.5 text-xs font-extrabold shadow-sm transition"
+            >
+              <Zap className="h-4 w-4 text-emerald-700" />
+              Invest with Broker →
+            </button>
+            <div className="hidden sm:flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold backdrop-blur-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              Live NSE Market
+            </div>
           </div>
         </div>
       </div>
@@ -143,19 +194,20 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* Products */}
+          {/* Products / Quick Investing Tools */}
           <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-950">Products</h2>
-                <p className="text-sm text-slate-500">Quick access to investing tools</p>
+                <h2 className="text-lg font-bold text-slate-950">Investing Tools</h2>
+                <p className="text-sm text-slate-500">Quick access to broker redirection & tracking</p>
               </div>
               <button
                 type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700"
-                aria-label="View all products"
+                onClick={() => navigate('/invest')}
+                className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-800 transition"
               >
-                <ChevronRight className="h-4 w-4" />
+                All Brokers
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -165,6 +217,7 @@ export default function Dashboard() {
                   <button
                     key={product.label}
                     type="button"
+                    onClick={() => navigate(product.path)}
                     className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/30"
                   >
                     <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${product.color}`}>
@@ -177,7 +230,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Popular stocks */}
+          {/* Popular stocks with 1-click Invest */}
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -189,13 +242,15 @@ export default function Dashboard() {
 
             <div className="divide-y divide-slate-100">
               {stocks.map((item) => (
-                <button
+                <div
                   key={item.ticker}
-                  type="button"
-                  onClick={() => navigate(`/company/${encodeURIComponent(item.ticker)}`)}
                   className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-3 text-left"
                 >
-                  <div className="flex min-w-0 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/company/${encodeURIComponent(item.ticker)}`)}
+                    className="flex min-w-0 items-center gap-3 text-left"
+                  >
                     <CompanyLogo ticker={item.ticker} name={item.name} />
                     <div className="min-w-0">
                       <div className="font-semibold text-slate-950 transition group-hover:text-emerald-700">
@@ -205,7 +260,8 @@ export default function Dashboard() {
                         {item.ticker} · {item.sector || 'NSE'}
                       </div>
                     </div>
-                  </div>
+                  </button>
+
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <div className="text-sm font-bold text-slate-950">{item.price}</div>
@@ -213,9 +269,16 @@ export default function Dashboard() {
                         {item.change}
                       </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/invest?symbol=${encodeURIComponent(item.ticker)}&name=${encodeURIComponent(item.name)}`)}
+                      className="rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 text-xs font-bold transition"
+                      title="Invest in this stock"
+                    >
+                      Invest →
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -223,12 +286,17 @@ export default function Dashboard() {
 
         {/* Sidebar */}
         <aside className="space-y-6">
+          {/* Real Portfolio Value Card */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-slate-500">Portfolio value</p>
-                <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">₹2,48,590</h2>
-                <p className="mt-1 text-sm font-semibold text-emerald-600">+₹8,420 today</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Portfolio value</p>
+                <h2 className="mt-2 text-2xl sm:text-3xl font-black tracking-tight text-slate-950">
+                  {portfolioLoading ? 'Loading...' : formatINR(currentValue)}
+                </h2>
+                <p className={`mt-1 text-xs font-bold ${isPnlPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {isPnlPositive ? '+' : ''}{formatINR(totalPnl)} ({isPnlPositive ? '+' : ''}{totalPnlPercent.toFixed(2)}%)
+                </p>
               </div>
               <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
                 <Wallet className="h-5 w-5" />
@@ -237,22 +305,37 @@ export default function Dashboard() {
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-lg bg-slate-50 p-3">
                 <div className="text-xs text-slate-500">Invested</div>
-                <div className="mt-1 font-bold text-slate-950">₹2,16,300</div>
+                <div className="mt-1 font-bold text-slate-950">
+                  {portfolioLoading ? '...' : formatINR(totalInvested)}
+                </div>
               </div>
               <div className="rounded-lg bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Returns</div>
-                <div className="mt-1 font-bold text-emerald-600">+14.9%</div>
+                <div className="text-xs text-slate-500">Holdings</div>
+                <div className="mt-1 font-bold text-slate-950">
+                  {portfolioLoading ? '...' : `${totalHoldings} stocks`}
+                </div>
               </div>
             </div>
-            <button
-              type="button"
-              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
-            >
-              <Plus className="h-4 w-4" />
-              Add investment
-            </button>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#0B3D2C] hover:bg-[#145A3E] px-3 py-2.5 text-xs font-bold text-white transition shadow-sm"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Holding
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/portfolio')}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-700 hover:border-emerald-300 hover:text-emerald-700 transition"
+              >
+                View Portfolio →
+              </button>
+            </div>
           </section>
 
+          {/* Watchlist Quick-Access */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -289,33 +372,64 @@ export default function Dashboard() {
             </div>
           </section>
 
+          {/* Broker Redirection Readiness */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
                 <ShieldCheck className="h-5 w-5" />
               </span>
               <div>
-                <h2 className="font-bold text-slate-950">Groww API ready</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-500">
-                  Credentials are stored in the backend environment. Connect the API routes to replace sample portfolio figures with live account data.
+                <h2 className="font-bold text-slate-950">Brokers Supported</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Groww, Zerodha Kite, Angel One, and Upstox are connected for seamless 1-click order redirection and manual portfolio tracking.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/invest')}
+                  className="mt-3 text-xs font-bold text-emerald-700 hover:text-emerald-800"
+                >
+                  Explore Broker Platforms →
+                </button>
               </div>
             </div>
           </section>
 
+          {/* Active Holdings Status */}
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-                <Briefcase className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="font-bold text-slate-950">Holdings</h2>
-                <p className="text-sm text-slate-500">4 active positions tracked</p>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                  <Briefcase className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 className="font-bold text-slate-950">Active Positions</h2>
+                  <p className="text-xs text-slate-500">
+                    {totalHoldings > 0
+                      ? `${totalHoldings} positions in your portfolio`
+                      : 'No holdings recorded yet'}
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => navigate('/portfolio')}
+                className="text-xs font-bold text-emerald-700 hover:text-emerald-800"
+              >
+                Manage
+              </button>
             </div>
           </section>
         </aside>
       </div>
+
+      {/* Add Investment Modal */}
+      <AddInvestmentModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSuccess={() => {
+          loadPortfolio();
+        }}
+      />
     </div>
   );
 }

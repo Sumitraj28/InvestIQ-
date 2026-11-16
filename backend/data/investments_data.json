@@ -1,0 +1,34 @@
+{
+  "investments": [
+    {
+      "_id": "inv_1794857700210_8g47l9e",
+      "userId": "user_test_alpha_123",
+      "companyName": "Tata Consultancy Services",
+      "stockSymbol": "TCS",
+      "brokerName": "Zerodha Kite",
+      "quantity": 5,
+      "purchasePrice": 3800,
+      "purchaseDate": "2026-11-16T19:35:00.210Z",
+      "exchange": "NSE",
+      "notes": "",
+      "totalInvestment": 19000,
+      "source": "manual",
+      "brokerOrderId": null,
+      "createdAt": "2026-11-16T19:35:00.210Z",
+      "updatedAt": "2026-11-16T19:35:00.210Z"
+    }
+  ],
+  "brokerSyncs": [
+    {
+      "userId": "user_test_alpha_123",
+      "broker": "groww",
+      "brokerDisplayName": "Groww",
+      "status": "connected",
+      "consentGiven": true,
+      "lastSyncedAt": "2026-11-16T19:35:00.213Z",
+      "syncMessage": "User consent recorded for groww. Official OAuth authorization verified.",
+      "accountMaskedId": "GRO-•••5143",
+      "updatedAt": "2026-11-16T19:35:00.213Z"
+    }
+  ]
+}

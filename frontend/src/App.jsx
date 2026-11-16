@@ -1,17 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import CompanyPage from './pages/CompanyPage';
 import Watchlist from './pages/Watchlist';
+import InvestmentPage from './pages/InvestmentPage';
+import PortfolioPage from './pages/PortfolioPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Show, SignInButton, SignUpButton, UserButton, useAuth } from '@clerk/react';
-import { BarChart3, Bell, Menu, LayoutDashboard } from 'lucide-react';
+import { BarChart3, Bell, Menu, LayoutDashboard, Wallet, TrendingUp, X } from 'lucide-react';
 
 function AppHeader() {
   const { isSignedIn } = useAuth();
   const location = useLocation();
-  const isLanding = location.pathname === '/';
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 border-b border-slate-100 bg-white/95 backdrop-blur-lg">
@@ -31,9 +33,9 @@ function AppHeader() {
           <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
             <Link to="/" className={`transition ${location.pathname === '/' ? 'text-[#0B3D2C] font-bold' : 'hover:text-emerald-600'}`}>Home</Link>
             <Link to="/watchlist" className={`transition ${location.pathname === '/watchlist' ? 'text-emerald-700 font-bold' : 'hover:text-emerald-600'}`}>Watchlist</Link>
+            <Link to="/invest" className={`transition ${location.pathname === '/invest' ? 'text-emerald-700 font-bold' : 'hover:text-emerald-600'}`}>Brokers</Link>
             <span className="cursor-pointer hover:text-emerald-600 transition">Services</span>
             <span className="cursor-pointer hover:text-emerald-600 transition">About</span>
-            <span className="cursor-pointer hover:text-emerald-600 transition">Resources</span>
           </nav>
         </Show>
 
@@ -46,7 +48,20 @@ function AppHeader() {
               <LayoutDashboard className="h-4 w-4" />
               Dashboard
             </Link>
-            <span className="cursor-pointer hover:text-emerald-600 transition">Investments</span>
+            <Link
+              to="/portfolio"
+              className={`flex items-center gap-1.5 transition ${location.pathname === '/portfolio' ? 'text-emerald-700 font-bold' : 'hover:text-emerald-600'}`}
+            >
+              <Wallet className="h-4 w-4" />
+              Portfolio
+            </Link>
+            <Link
+              to="/invest"
+              className={`flex items-center gap-1.5 transition ${location.pathname === '/invest' || location.pathname === '/investment' ? 'text-emerald-700 font-bold' : 'hover:text-emerald-600'}`}
+            >
+              <TrendingUp className="h-4 w-4" />
+              Invest Now
+            </Link>
             <Link
               to="/watchlist"
               className={`transition ${location.pathname === '/watchlist' ? 'text-emerald-700 font-bold' : 'hover:text-emerald-600'}`}
@@ -85,13 +100,77 @@ function AppHeader() {
           {/* Mobile menu button */}
           <button
             type="button"
-            className="inline-flex md:hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="inline-flex md:hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 transition"
             aria-label="Menu"
           >
-            <Menu className="h-5 w-5" />
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
       </div>
+
+      {/* Mobile Dropdown Menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-b border-slate-200 bg-white px-4 py-4 space-y-3">
+          <Show when="signed-in">
+            <Link
+              to="/dashboard"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              Dashboard
+            </Link>
+            <Link
+              to="/portfolio"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              <Wallet className="h-4 w-4" />
+              Portfolio Dashboard
+            </Link>
+            <Link
+              to="/invest"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              <TrendingUp className="h-4 w-4" />
+              Invest Now (Broker Selection)
+            </Link>
+            <Link
+              to="/watchlist"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              Watchlist
+            </Link>
+          </Show>
+
+          <Show when="signed-out">
+            <Link
+              to="/"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              Home
+            </Link>
+            <Link
+              to="/watchlist"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              Watchlist
+            </Link>
+            <Link
+              to="/invest"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              Brokers (Groww, Zerodha, Angel One, Upstox)
+            </Link>
+          </Show>
+        </div>
+      )}
     </header>
   );
 }
@@ -114,6 +193,30 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/portfolio"
+              element={
+                <ProtectedRoute>
+                  <PortfolioPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invest"
+              element={
+                <ProtectedRoute>
+                  <InvestmentPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/investment"
+              element={
+                <ProtectedRoute>
+                  <InvestmentPage />
                 </ProtectedRoute>
               }
             />
@@ -145,7 +248,7 @@ export default function App() {
                   </span>
                 </div>
                 <p className="text-sm text-slate-500 leading-relaxed">
-                  Your intelligent companion for Indian equity market analysis, powered by live NSE data and AI insights.
+                  Your intelligent companion for Indian equity market analysis, powered by live NSE data, broker redirection, and portfolio tracking.
                 </p>
               </div>
 
@@ -153,21 +256,27 @@ export default function App() {
               <div>
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Products</h3>
                 <ul className="space-y-3 text-sm text-slate-500">
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Stocks</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">
+                    <Link to="/invest">Broker Investing</Link>
+                  </li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">
+                    <Link to="/portfolio">Portfolio Manager</Link>
+                  </li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">
+                    <Link to="/watchlist">Watchlist</Link>
+                  </li>
                   <li className="hover:text-emerald-600 cursor-pointer transition">Mutual Funds</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">F&O</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">US Stocks</li>
                 </ul>
               </div>
 
-              {/* Resources */}
+              {/* Supported Brokers */}
               <div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Resources</h3>
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Supported Brokers</h3>
                 <ul className="space-y-3 text-sm text-slate-500">
-                  <li className="hover:text-emerald-600 cursor-pointer transition">API Docs</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Market News</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Help Center</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Community</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">Groww</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">Zerodha Kite</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">Angel One</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">Upstox</li>
                 </ul>
               </div>
 
@@ -176,16 +285,16 @@ export default function App() {
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Company</h3>
                 <ul className="space-y-3 text-sm text-slate-500">
                   <li className="hover:text-emerald-600 cursor-pointer transition">About Us</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Careers</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Privacy Policy</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">Security & Privacy</li>
+                  <li className="hover:text-emerald-600 cursor-pointer transition">SEBI Compliance Notes</li>
                   <li className="hover:text-emerald-600 cursor-pointer transition">Terms of Service</li>
                 </ul>
               </div>
             </div>
 
             <div className="mt-10 border-t border-slate-200 pt-8 flex flex-col items-center justify-between gap-3 sm:flex-row">
-              <p className="text-sm text-slate-500">© {new Date().getFullYear()} InvestIQ — Indian equity market intelligence.</p>
-              <p className="text-xs text-slate-400">NSE data cached via MongoDB · Powered by yfinance</p>
+              <p className="text-sm text-slate-500">© {new Date().getFullYear()} InvestIQ — Indian equity market intelligence & portfolio management.</p>
+              <p className="text-xs text-slate-400">Integrated with Groww, Zerodha, Angel One & Upstox</p>
             </div>
           </div>
         </footer>

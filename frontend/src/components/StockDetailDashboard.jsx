@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -11,16 +12,22 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  ArrowRight,
   Bell,
   Bookmark,
   CalendarCheck,
+  CandlestickChart as CandlestickIcon,
   ChevronRight,
   Info,
+  LineChart as LineChartIcon,
   Loader2,
   SlidersHorizontal,
   Sparkles,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react';
 import AiCompanyBrief from './AiCompanyBrief';
+import CandlestickChart from './CandlestickChart';
 import CompanyLogo from './CompanyLogo';
 import SignalBadge from './SignalBadge';
 import { getStockFinancials } from '../services/api';
@@ -169,18 +176,26 @@ export default function StockDetailDashboard({
   aiLoading = false,
   aiError = null,
 }) {
+  const navigate = useNavigate();
   const [selectedRange, setSelectedRange] = useState('1Y');
+  const [chartType, setChartType] = useState('line');
 
   const chartData = useMemo(() => (
     history
-      .map((item) => ({
-        date: item.date,
-        close: Number(item.close),
-        high: Number(item.high),
-        low: Number(item.low),
-        open: Number(item.open),
-        volume: Number(item.volume || 0),
-      }))
+      .map((item) => {
+        const close = Number(item.close);
+        const open = Number(item.open ?? item.close);
+        const high = Number(item.high ?? Math.max(open, close));
+        const low = Number(item.low ?? Math.min(open, close));
+        return {
+          date: item.date,
+          close,
+          open,
+          high,
+          low,
+          volume: Number(item.volume || 0),
+        };
+      })
       .filter((item) => item.date && Number.isFinite(item.close))
   ), [history]);
 
@@ -274,6 +289,25 @@ export default function StockDetailDashboard({
     return null;
   }, [financials, financialPeriod, activeFinancialList]);
 
+  const handleInvestNow = () => {
+    const symbol = stock.ticker || '';
+    const cleanTicker = symbol.replace('.NS', '');
+    const name = stock.name || cleanTicker;
+    navigate(`/invest?symbol=${encodeURIComponent(symbol)}&name=${encodeURIComponent(name)}&price=${latestPrice}&exchange=NSE`, {
+      state: {
+        symbol,
+        name,
+        exchange: 'NSE',
+        price: latestPrice,
+        dayChangePercent,
+        week52High,
+        week52Low,
+        peRatio: stock.peRatio,
+        sector: stock.sector || stock.industry,
+      },
+    });
+  };
+
   return (
     <div className="bg-white">
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
@@ -287,16 +321,54 @@ export default function StockDetailDashboard({
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
                 {stock.name || stock.ticker}
               </h1>
-              <div className="mt-5 flex flex-wrap items-end gap-2">
+              <div className="mt-5 flex flex-wrap items-center gap-3">
                 <span className="text-3xl font-bold text-slate-900">{formatINR(latestPrice)}</span>
-                <span className={`pb-1 text-sm font-bold ${trendUp ? 'text-emerald-600' : 'text-rose-600'}`}>
+                <span className={`text-sm font-bold ${trendUp ? 'text-emerald-600' : 'text-rose-600'}`}>
                   {trendUp ? '+' : ''}{formatINR(dayChange, { minimumFractionDigits: 2 })} ({trendUp ? '+' : ''}{dayChangePercent.toFixed(2)}%)
                 </span>
-                <span className="pb-1 text-sm font-medium text-slate-500">1D</span>
+                <span className="text-sm font-medium text-slate-400">1D</span>
+
+                {/* Quick Chart View Selector */}
+                <div className="ml-2 inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setChartType('line')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold transition ${
+                      chartType === 'line'
+                        ? 'bg-white text-emerald-800 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                    title="Switch to Line Chart"
+                  >
+                    <LineChartIcon className="h-3.5 w-3.5" />
+                    <span>Line</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartType('candle')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-bold transition ${
+                      chartType === 'candle'
+                        ? 'bg-[#0B3D2C] text-white shadow-sm'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                    title="Switch to Candlestick Chart"
+                  >
+                    <CandlestickIcon className="h-3.5 w-3.5" />
+                    <span>Candle</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleInvestNow}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2C] hover:bg-[#145A3E] px-5 py-2.5 text-xs sm:text-sm font-bold text-white shadow-md hover:shadow-lg hover:scale-105 transition"
+              >
+                <span>Invest Now</span>
+                <ArrowRight className="h-4 w-4" />
+              </button>
               <button type="button" className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700" aria-label="Set price alert">
                 <Bell className="h-5 w-5" />
               </button>
@@ -306,30 +378,36 @@ export default function StockDetailDashboard({
             </div>
           </div>
 
-          <div className="mt-10 h-[360px]">
+          <div className="mt-8 min-h-[360px]">
             {historyLoading ? (
-              <div className="flex h-full items-center justify-center rounded-lg bg-slate-50 text-sm font-semibold text-slate-500">
+              <div className="flex h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-semibold text-slate-500">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Loading chart
               </div>
             ) : filteredData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis domain={['dataMin', 'dataMax']} hide />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="close"
-                    stroke={trendUp ? '#00b386' : '#e11d48'}
-                    strokeWidth={2.5}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              chartType === 'candle' ? (
+                <CandlestickChart data={filteredData} height={360} />
+              ) : (
+                <div className="h-[360px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={filteredData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                      <XAxis dataKey="date" hide />
+                      <YAxis domain={['dataMin', 'dataMax']} hide />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Line
+                        type="monotone"
+                        dataKey="close"
+                        stroke={trendUp ? '#00b386' : '#e11d48'}
+                        strokeWidth={2.5}
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )
             ) : (
-              <div className="flex h-full items-center justify-center rounded-lg bg-slate-50 text-sm font-semibold text-slate-500">
+              <div className="flex h-[360px] items-center justify-center rounded-lg bg-slate-50 text-sm font-semibold text-slate-500">
                 Historical chart data is unavailable.
               </div>
             )}
@@ -341,25 +419,53 @@ export default function StockDetailDashboard({
             </div>
           )}
 
-          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
-            {ranges.map((range) => (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              {ranges.map((range) => (
+                <button
+                  key={range.label}
+                  type="button"
+                  onClick={() => setSelectedRange(range.label)}
+                  className={`min-w-11 rounded-full border px-4 py-1.5 text-xs sm:text-sm font-semibold transition ${
+                    selectedRange === range.label
+                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                      : 'border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 bg-white'
+                  }`}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Chart View Toggle in Toolbar */}
+            <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 border border-slate-200">
               <button
-                key={range.label}
                 type="button"
-                onClick={() => setSelectedRange(range.label)}
-                className={`min-w-11 rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  selectedRange === range.label
-                    ? 'border-slate-900 text-slate-900'
-                    : 'border-slate-200 text-slate-500 hover:border-emerald-300 hover:text-emerald-700'
+                onClick={() => setChartType('line')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  chartType === 'line'
+                    ? 'bg-white text-emerald-800 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
+                title="Line Chart View"
               >
-                {range.label}
+                <LineChartIcon className="h-3.5 w-3.5" />
+                <span>Line Chart</span>
               </button>
-            ))}
-            <button type="button" className="ml-auto hidden items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:border-emerald-300 hover:text-emerald-700 sm:inline-flex">
-              Terminal
-              <SlidersHorizontal className="h-4 w-4" />
-            </button>
+              <button
+                type="button"
+                onClick={() => setChartType('candle')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  chartType === 'candle'
+                    ? 'bg-[#0B3D2C] text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Candlestick Chart View"
+              >
+                <CandlestickIcon className="h-3.5 w-3.5" />
+                <span>Candlestick</span>
+              </button>
+            </div>
           </div>
         </section>
 
@@ -404,6 +510,29 @@ export default function StockDetailDashboard({
         <div className="mt-8">
           <SignalBadge signal={stock.signal} />
         </div>
+
+        {/* Prominent Invest Now Section */}
+        <section className="my-8 rounded-2xl bg-gradient-to-r from-[#0B3D2C] via-[#114E38] to-[#145A3E] p-6 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+          <div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-300 mb-2">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Direct Broker Investing
+            </div>
+            <h3 className="text-xl sm:text-2xl font-black tracking-tight">
+              Invest in {stock.name || stock.ticker}
+            </h3>
+            <p className="mt-1 text-xs sm:text-sm text-emerald-100 max-w-lg">
+              Live price: <strong className="text-white">{formatINR(latestPrice)}</strong> ({stock.ticker?.replace('.NS', '')} · NSE). Select your preferred stockbroker (Groww, Zerodha Kite, Angel One, or Upstox) to execute your purchase securely.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleInvestNow}
+            className="inline-flex items-center gap-2 rounded-xl bg-white text-[#0B3D2C] hover:bg-emerald-50 px-6 py-3.5 text-sm sm:text-base font-extrabold shadow-md hover:shadow-xl hover:scale-105 transition shrink-0"
+          >
+            <span>Invest Now →</span>
+          </button>
+        </section>
 
         <section className="mt-8">
           <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800">
@@ -579,6 +708,25 @@ export default function StockDetailDashboard({
               />
             </div>
           </div>
+        </section>
+
+        {/* Bottom Invest Now Section */}
+        <section className="mt-10 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">
+              Ready to take a position in {stock.name || stock.ticker}?
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
+              Choose from Groww, Zerodha Kite, Angel One, or Upstox to execute your order.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleInvestNow}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#0B3D2C] hover:bg-[#145A3E] px-6 py-3 text-sm font-bold text-white shadow-md hover:shadow-lg transition"
+          >
+            <span>Invest Now →</span>
+          </button>
         </section>
       </div>
     </div>

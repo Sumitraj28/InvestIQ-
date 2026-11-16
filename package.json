@@ -4,7 +4,10 @@
   "scripts": {
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
+    "dev:data": "cd data-service && ./.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --reload",
     "dev": "npm --prefix backend run dev",
-    "seed": "npm --prefix backend run seed"
+    "seed": "npm --prefix backend run seed",
+    "test": "npm --prefix backend test",
+    "build:frontend": "npm --prefix frontend run build"
   }
 }

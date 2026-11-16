@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 
+// Disable buffering so unhandled database disconnects fail fast instead of hanging for 10s
+mongoose.set('bufferCommands', false);
+
 const connectDB = async () => {
   const primaryUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/stocksense';
   try {

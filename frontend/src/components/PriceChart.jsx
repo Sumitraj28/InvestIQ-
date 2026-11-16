@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { BarChart3, TrendingUp } from 'lucide-react';
+import { BarChart3, CandlestickChart as CandlestickIcon, LineChart as LineChartIcon, TrendingUp } from 'lucide-react';
+import CandlestickChart from './CandlestickChart';
 
 const ranges = [
   { label: '6M', days: 182 },
@@ -77,6 +78,7 @@ export function PriceChartSkeleton() {
 
 export default function PriceChart({ history = [], ticker = 'Stock', loading = false }) {
   const [selectedRange, setSelectedRange] = useState('5Y');
+  const [chartType, setChartType] = useState('line');
 
   const chartData = useMemo(() => (
     history
@@ -84,9 +86,9 @@ export default function PriceChart({ history = [], ticker = 'Stock', loading = f
         ...item,
         date: item.date,
         close: Number(item.close),
-        open: Number(item.open),
-        high: Number(item.high),
-        low: Number(item.low),
+        open: Number(item.open ?? item.close),
+        high: Number(item.high ?? Math.max(Number(item.open || item.close), Number(item.close))),
+        low: Number(item.low ?? Math.min(Number(item.open || item.close), Number(item.close))),
         volume: Number(item.volume || 0),
       }))
       .filter((item) => item.date && Number.isFinite(item.close))
@@ -135,55 +137,92 @@ export default function PriceChart({ history = [], ticker = 'Stock', loading = f
           </p>
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-          {ranges.map((range) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Chart Type Toggle */}
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
             <button
-              key={range.label}
               type="button"
-              onClick={() => setSelectedRange(range.label)}
-              className={`min-w-10 rounded-md px-3 py-1.5 text-xs font-bold transition ${
-                selectedRange === range.label
-                  ? 'bg-white text-blue-700 shadow-sm'
+              onClick={() => setChartType('line')}
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold transition ${
+                chartType === 'line'
+                  ? 'bg-white text-emerald-800 shadow-sm'
                   : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              {range.label}
+              <LineChartIcon className="h-3.5 w-3.5" />
+              <span>Line</span>
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setChartType('candle')}
+              className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-bold transition ${
+                chartType === 'candle'
+                  ? 'bg-[#0B3D2C] text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <CandlestickIcon className="h-3.5 w-3.5" />
+              <span>Candle</span>
+            </button>
+          </div>
+
+          {/* Time Ranges */}
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+            {ranges.map((range) => (
+              <button
+                key={range.label}
+                type="button"
+                onClick={() => setSelectedRange(range.label)}
+                className={`min-w-10 rounded-md px-3 py-1.5 text-xs font-bold transition ${
+                  selectedRange === range.label
+                    ? 'bg-white text-blue-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="h-[320px] w-full rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={filteredData} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
-            <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={formatDate}
-              minTickGap={34}
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              tickLine={false}
-              axisLine={{ stroke: '#cbd5e1' }}
-            />
-            <YAxis
-              domain={['dataMin', 'dataMax']}
-              tickFormatter={(value) => `₹${Math.round(value).toLocaleString('en-IN')}`}
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              tickLine={false}
-              axisLine={false}
-              width={72}
-            />
-            <Tooltip content={<ChartTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="close"
-              stroke={trendUp ? '#059669' : '#e11d48'}
-              strokeWidth={2.5}
-              dot={false}
-              activeDot={{ r: 4 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+      <div className="min-h-[320px] w-full">
+        {chartType === 'candle' ? (
+          <CandlestickChart data={filteredData} height={320} />
+        ) : (
+          <div className="h-[320px] w-full rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={filteredData} margin={{ top: 10, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={formatDate}
+                  minTickGap={34}
+                  tick={{ fill: '#64748b', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#cbd5e1' }}
+                />
+                <YAxis
+                  domain={['dataMin', 'dataMax']}
+                  tickFormatter={(value) => `₹${Math.round(value).toLocaleString('en-IN')}`}
+                  tick={{ fill: '#64748b', fontSize: 12 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={72}
+                />
+                <Tooltip content={<ChartTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="close"
+                  stroke={trendUp ? '#059669' : '#e11d48'}
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">

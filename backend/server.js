@@ -1,12 +1,14 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const dotenv = require('dotenv');
 
 // Load environment variables before importing modules that read process.env
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const connectDB = require('./config/db');
 const stockRoutes = require('./routes/stockRoutes');
+const portfolioRoutes = require('./routes/portfolioRoutes');
 
 // Initialize express app
 const app = express();
@@ -29,6 +31,7 @@ app.get('/api/health', (req, res) => {
 
 // Mount Routes
 app.use('/api/stocks', stockRoutes);
+app.use('/api/portfolio', portfolioRoutes);
 
 // 404 Handler
 app.use((req, res) => {

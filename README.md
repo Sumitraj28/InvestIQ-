@@ -1,215 +1,256 @@
-# InvestIQ — AI Investment Research Agent for Indian Equities
+# InvestIQ — Investment & Portfolio Management System
 
-> A Next.js 14 platform that runs a multi-agent LangGraph pipeline (research → analyze → decide) over Gemini and Tavily Search to produce institutional-style equity research reports on Indian stocks, backed by a real quantitative ML engine (Random Forest / Gradient Boosting on technical indicators) and a client-side DCF valuation tool.
-
-**Tagline:** *Search a ticker. Get a verdict — backed by data, not vibes.*
+> **InvestIQ** is a professional Indian stock market analysis, broker redirection, and investment portfolio tracking platform built with **React.js, Vite, Node.js, Express, MongoDB, and Clerk Authentication**.
 
 ---
 
-## 🎯 Problem Statement
+## 🌟 Overview & Key Capabilities
 
-Retail investors in India either rely on scattered broker notes and forum "tips," or pay for institutional research they don't have access to. There's no single place that combines live market data, AI-generated qualitative research, and an honestly-validated quantitative signal in one report — most "AI stock picker" tools either hide their model's real accuracy or skip data-driven signals entirely. InvestIQ centralizes this: a LangGraph research agent gathers and synthesizes news/fundamentals, a trained ML engine scores short-term direction with disclosed AUC (not fake confidence), and a DCF tool lets the user stress-test the valuation themselves.
-
----
-
-## ✨ Key Features
-
-- 🔎 **Ticker-based research agent** — LangGraph state machine (research → analyze → decide) using Gemini for synthesis and Tavily Search for live web/news context
-- 📊 **Quantitative ML signal engine** — RandomForest/GradientBoosting/LogisticRegression classifiers on technical indicators (RSI-14, MACD histogram, %-above-SMA50/200, NATR volatility), multi-horizon targets (5/21/60-day), walk-forward validated
-- 🧪 **Honest signal labeling** — surfaces real backtested AUC (~0.53 "weak edge") and recent-fold-only strength instead of inflated confidence scores
-- 💹 **Real market data** — Financial Modeling Prep integration for live fundamentals/pricing
-- 🧮 **Interactive DCF valuation tool** — lets the user adjust growth/discount assumptions and see fair value recompute client-side
-- 🏛️ **Institutional-style report page** — dossier-format writeup with decision (INVEST/PASS), reasoning, source citations, and market snapshot (NIFTY 50, SENSEX, USD/INR, India VIX)
-- 🎯 **Top picks & sector heatmap** on the dashboard
-- 🧵 **Full agent trace logs** — every research step is logged and shown, not a black box
-- 🐍 **Standalone Python ML pipeline** — `ml:data` → `ml:train` → `ml:predict` scripts, separate from the Next.js app
-- 🔐 *(planned)* Persistence + auth via Supabase — save reports per user instead of localStorage-only
+InvestIQ empowers Indian equity investors to:
+1. **Analyze Indian Equities** — Live NSE prices, 5-year interactive charts, 52-week ranges, fundamentals, quarterly/yearly financials, and AI company briefings.
+2. **1-Click Broker Redirection** — Prominent **Invest Now →** routing to verified order pages on India's top stockbrokers:
+   - **Groww**
+   - **Zerodha Kite**
+   - **Angel One**
+   - **Upstox**
+3. **Dedicated Portfolio Dashboard** — Record stock purchases, track total invested capital, live portfolio value, net profit/loss (₹ and %), broker-wise investment distribution charts, and edit/delete holdings.
+4. **Broker Sync Architecture** — Future-ready read-only synchronization with explicit user consent, timestamps, and duplicate prevention.
+5. **Secure Authentication** — Clerk Authentication protecting investment and portfolio routes, with backend Clerk JWT verification isolating data per authenticated user.
 
 ---
 
-## 👥 Roles
-
-| Role                   | Responsibilities                                                             |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| Sumit Raj Verma        | Front-end                                                                    |
-| Nitin                  | Cloud                                                                        |
-| Aditya Pratap Singh    | AI/ML                                                                        |
-| Ritesh                 | Cloud                                                                        |
-| Tanish Yadav           | Backend                                                                      |
-| Ashu Singh             |                                                                              |
----
-
-
-## 🧠 Core Pipeline
-
-### 1. Research Agent (LangGraph)
-
-A 3-node compiled state graph:
-
-```
-START → research → analyze → makeDecision → END
-```
-
-- **research** — queries Tavily for live news/context on the company, appends to a growing `searchResults[]` log
-- **analyze** — sends aggregated research to Gemini, produces `analysisReport`
-- **makeDecision** — Gemini reduces the analysis to a final `decision` (`INVEST` / `PASS`) with `reasoning`
-
-State is a single `AgentState` object threaded through every node (company name, logs, search results, report, decision, reasoning, error).
-
-### 2. ML Signal Scoring
-
-```
-signalScore = trained_classifier(technicalIndicators) → probability by horizon (5d / 21d / 60d)
-```
-
-Trained per-ticker on historical OHLCV panel data (10 large-cap NSE tickers), 3-fold walk-forward validated to avoid lookahead leakage, model selected by AUC per horizon. Best result: GradientBoosting @ 21-day horizon, avg AUC 0.533 — reported as-is, including the fact that the edge fades in the most recent fold.
-
-### 3. DCF Valuation
-
-Client-side discounted cash flow calculator on the report page — user-adjustable growth/discount/terminal-value inputs recompute fair value instantly, no server round-trip.
-
----
-
-## 🏗️ System Architecture
-
-```mermaid
-flowchart TB
-    subgraph Client["Client Layer"]
-        A1[Dashboard - app/page.tsx]
-        A2[Report Page - app/report]
-        A3[Interactive DCF Tool]
-    end
-
-    subgraph Server["Next.js 14 App Router - Route Handlers"]
-        B1[/api/agent - LangGraph Research Endpoint/]
-        B2[/api/ml - ML Prediction and Metrics Endpoint/]
-    end
-
-    subgraph Agent["LangGraph Research Agent"]
-        C1[research node]
-        C2[analyze node]
-        C3[makeDecision node]
-    end
-
-    subgraph ML["Python ML Engine - ml/"]
-        D1[data_loader.py - Yahoo Finance OHLCV]
-        D2[feature_engineering.py - RSI, MACD, ATR, SMA]
-        D3[train.py - RF / GBM / LogReg, walk-forward CV]
-        D4[predict.py - latest_predictions.json cache]
-    end
-
-    subgraph External["External Services"]
-        E1[Google Gemini API]
-        E2[Tavily Search API]
-        E3[Financial Modeling Prep API]
-    end
-
-    A1 --> B1
-    A2 --> B1
-    A1 --> B2
-    A2 --> B2
-
-    B1 --> C1 --> C2 --> C3
-    C1 --> E2
-    C2 --> E1
-    C3 --> E1
-    B1 --> E3
-
-    D1 --> D2 --> D3 --> D4
-    B2 --> D4
-```
-
----
-
-## 📊 Data Flow — Report Generation
+## 🚀 Complete User Flow
 
 ```mermaid
 flowchart LR
-    User((User)) -- Enter ticker/company --> UI[Dashboard]
-    UI --> API[/api/agent/]
-    API --> Research[1.0 Research - Tavily]
-    Research --> Analyze[2.0 Analyze - Gemini]
-    Analyze --> Decide[3.0 Decision - Gemini]
-    API --> MLCache[(latest_predictions.json)]
-    MLCache --> API
-    Decide --> Report[Report Page]
-    MLCache --> Report
-    Report -- Adjust assumptions --> DCF[Client-side DCF Recalc]
-    Report --> User
+    A["1. Search Stock\n(e.g. RELIANCE)"] --> B["2. Analyze Stock\nCharts, Financials & AI"]
+    B --> C["3. Click 'Invest Now →'"]
+    C --> D["4. Select Broker\n(Groww / Zerodha / Angel / Upstox)"]
+    D --> E["5. Secure Redirection\nOfficial Broker Platform (New Tab)"]
+    E --> F["6. Complete Purchase\nExternally on Broker"]
+    F --> G["7. Record Investment\nInvestIQ Add Investment Modal"]
+    G --> H["8. Portfolio Dashboard\nLive P&L, Allocation & Charts"]
 ```
-
-> Diagrams reflect the current Next.js 14 architecture. The legacy Express/Vite server in `server/` is kept as a secondary backend and is not part of the primary flow above.
 
 ---
 
-## 🚀 Getting Started
+## 🏗️ Architecture & Technology Stack
+
+| Layer | Technologies |
+|---|---|
+| **Frontend** | React 18, Vite 5, Tailwind CSS 3, React Router v6, Recharts, Lucide Icons, `@clerk/react` |
+| **Backend** | Node.js (v18+), Express.js 4, Mongoose 8 / MongoDB, `jose` (JWT verification), CORS, Dotenv |
+| **Authentication** | Clerk Authentication (Protected Routes, Clerk JWT bearer authorization on server) |
+| **Data Services** | Fast yfinance service / NSE fallback directory, in-memory caching (15-min TTL) |
+| **Database** | MongoDB Atlas / Local MongoDB Mongoose models with persistent local store fallback |
+
+---
+
+## 📁 Project Structure
+
+```text
+InvestIQ-/
+├── package.json                   # Root package runner (dev, dev:frontend, dev:backend, test)
+├── README.md                      # Comprehensive project documentation
+├── backend/                       # Express Node.js API server (Port 5050)
+│   ├── config/
+│   │   └── db.js                  # MongoDB connection & local fallback handler
+│   ├── data/
+│   │   └── investments_data.json  # Persistent local store fallback (offline resilience)
+│   ├── middleware/
+│   │   └── auth.js                # Clerk JWT Bearer authentication middleware
+│   ├── models/
+│   │   ├── Stock.js               # Mongoose schema for cached stock profiles
+│   │   ├── Investment.js          # Mongoose schema for user stock purchases
+│   │   └── BrokerSync.js          # Mongoose schema for broker integration state
+│   ├── routes/
+│   │   ├── stockRoutes.js         # /api/stocks (prices, history, financials, AI summary)
+│   │   └── portfolioRoutes.js     # /api/portfolio (CRUD investments, summary, prices, brokers)
+│   ├── services/
+│   │   ├── portfolioStore.js      # Data Access Layer (MongoDB + local fallback)
+│   │   ├── growwService.js        # Groww financial statement parser
+│   │   ├── nseService.js          # NSE India service & directory fallback
+│   │   └── pythonDataService.js   # yfinance gateway integration
+│   ├── test/
+│   │   └── portfolio.test.js      # 29 automated tests for auth, validation, CRUD & P&L
+│   ├── server.js                  # Express application entrypoint
+│   └── .env.example               # Backend environment variables template
+├── frontend/                      # React + Vite Single Page Application
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── BrokerLogo.jsx     # Authentic SVG logos (Groww, Zerodha, Angel One, Upstox)
+│   │   │   ├── CompanyLogo.jsx    # Company favicon & logo resolver
+│   │   │   ├── AddInvestmentModal.jsx # Dynamic form with live Quantity × Price calculation
+│   │   │   ├── StockDetailDashboard.jsx # Stock analysis view with Invest Now buttons
+│   │   │   └── ProtectedRoute.jsx # Clerk auth route protection
+│   │   ├── data/
+│   │   │   ├── brokerConfig.js    # Verified broker URLs, descriptions, & pricing
+│   │   │   └── popularTickers.js  # Popular NSE tickers catalog
+│   │   ├── pages/
+│   │   │   ├── Home.jsx           # Landing page with market overview
+│   │   │   ├── Dashboard.jsx      # User dashboard with real portfolio widgets
+│   │   │   ├── CompanyPage.jsx    # Stock detail route wrapper
+│   │   │   ├── InvestmentPage.jsx # /invest Broker Selection & stock showcase
+│   │   │   ├── PortfolioPage.jsx  # /portfolio Dedicated portfolio dashboard
+│   │   │   └── Watchlist.jsx      # Watchlist management
+│   │   ├── services/
+│   │   │   └── api.js             # Axios client with authenticated token headers
+│   │   ├── App.jsx                # Router & navigation header (Portfolio, Invest links)
+│   │   └── main.jsx               # ClerkProvider initialization
+│   └── .env.example               # Frontend environment variables template
+```
+
+---
+
+## 🔑 Environment Variables Setup
+
+### 1. Frontend (`frontend/.env.local`)
+Create `frontend/.env.local` using the template below:
+```env
+# Clerk Authentication Publishable Key
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_dGVuZGVyLXNsdWctNDIwMC5jbGVyay5hY2NvdW50cy5kZXYk
+
+# Backend API Base URL
+VITE_API_URL=http://localhost:5050/api
+```
+
+### 2. Backend (`backend/.env`)
+Create `backend/.env` using the template below:
+```env
+# Server Port
+PORT=5050
+HOST=127.0.0.1
+
+# Database (MongoDB connection string)
+MONGO_URI=mongodb://127.0.0.1:27017/stocksense
+
+# Python Data Service URL (Optional)
+PYTHON_DATA_SERVICE_URL=http://127.0.0.1:8000
+
+# Clerk Authentication (Session validation & JWT parsing)
+CLERK_SECRET_KEY=sk_test_VXtrCCl9SleV8hngxP6TC9WjxUuh2Xw1ZQYYdqjXoy
+CLERK_PUBLISHABLE_KEY=pk_test_dGVuZGVyLXNsdWctNDIwMC5jbGVyay5hY2NvdW50cy5kZXYk
+
+# Optional API Keys
+OPENAI_API_KEY=your_openai_api_key_here
+GROWW_API_KEY=your_groww_api_key_here
+```
+
+---
+
+## 📦 Installation & Setup Guide
 
 ### Prerequisites
+- **Node.js** v18.0.0 or higher
+- **npm** v9.0.0 or higher
+- **MongoDB** (Local `mongod` or MongoDB Atlas cloud connection)
 
-- Node.js (v18+)
-- Python 3.9+ (for the ML pipeline)
-- API keys: Google Gemini, Tavily Search, Financial Modeling Prep (optional)
-
-### Setup
-
+### 1. Install Dependencies
+From the project root:
 ```bash
-# Clone the repo
-git clone <your-repo-url>
-cd "AI Investment Research Agent"
+# Install backend dependencies
+cd backend && npm install
 
-# Install Node dependencies
-npm install
+# Install frontend dependencies
+cd ../frontend && npm install
 
-# (Optional) Install Python ML dependencies
-cd ml && pip install -r requirements.txt && cd ..
+# Return to root
+cd ..
 ```
 
-### Environment Variables
-
-Copy `.env.local.example` to `.env.local`:
-
+### 2. Run Automated Backend Tests
+Verify all authentication, input validation, CRUD operations, calculations, and broker sync:
 ```bash
-cp .env.local.example .env.local
+npm run test
+# Output: Verification Complete: 29 Passed, 0 Failed
 ```
 
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
-FMP_API_KEY=your_fmp_api_key_here
-NODE_ENV=development
-PORT=3000
-```
-
-### Run locally
-
+### 3. Build Frontend
 ```bash
-# App
+npm run build:frontend
+```
+
+### 4. Start the Application
+Run frontend and backend in separate terminal windows:
+
+**Terminal 1 (Backend API):**
+```bash
+cd backend
 npm run dev
+# Server will start on http://127.0.0.1:5050
+```
 
-# ML pipeline (optional, run in order)
-npm run ml:data
-npm run ml:train
-npm run ml:predict
+**Terminal 2 (Frontend Client):**
+```bash
+cd frontend
+npm run dev
+# Vite client will start on http://localhost:5173
 ```
 
 ---
 
-## 🗓️ Build Roadmap
+## 📡 API Reference
 
-- [x] LangGraph research agent (research → analyze → decide)
-- [x] Real market-data API integration (FMP)
-- [x] Python ML engine — technical-indicator classifiers, walk-forward validated
-- [x] Interactive DCF valuation tool
-- [ ] Port DCF tool back into the live Next.js report page (currently only in legacy `server/`)
-- [ ] Persistence + auth (Supabase — Postgres + Auth)
-- [ ] Automated tests across agent + ML pipeline
-- [ ] Source citations inline in the generated report
-- [ ] API rate limiting
-- [ ] Multi-stage DCF (bear/base/bull scenarios)
-- [ ] Report versioning / diffing
+### Stock Analysis Endpoints
+- `GET /api/stocks/:ticker` — Get stock details (last price, day change, 52W range, market cap, P/E).
+- `GET /api/stocks/:ticker/history` — Get 5-year historical price series.
+- `GET /api/stocks/:ticker/financials` — Get real quarterly & yearly revenue/profit from Groww.
+- `GET /api/stocks/:ticker/ai-summary` — Get AI company brief.
+
+### Portfolio Endpoints (Requires `Authorization: Bearer <ClerkJWT>`)
+- `GET /api/portfolio/investments` — List all stock holdings for the authenticated user.
+- `POST /api/portfolio/investments` — Record a new purchase.
+  - Body: `{ companyName, stockSymbol, brokerName, quantity, purchasePrice, purchaseDate, exchange, notes }`
+  - Automatically calculates: `totalInvestment = quantity × purchasePrice`.
+- `PUT /api/portfolio/investments/:id` — Update existing investment record.
+- `DELETE /api/portfolio/investments/:id` — Delete investment record.
+- `GET /api/portfolio/summary` — Retrieve aggregate metrics:
+  - `totalInvested`: Sum of all purchase amounts.
+  - `currentValue`: Current market value based on live stock prices.
+  - `totalPnl` and `totalPnlPercent`: Returns formatted with color indicators.
+  - `brokerDistribution`: Breakdown of capital across Groww, Zerodha, Angel One, Upstox.
+  - `holdings`: Enriched list with live prices and individual P&L.
+- `GET /api/portfolio/prices?symbols=RELIANCE,TCS` — Batch price lookup for portfolio stocks.
+- `GET /api/portfolio/brokers` — Read broker sync status for supported brokers.
+- `POST /api/portfolio/brokers/sync` — Trigger broker holding sync with explicit user consent.
 
 ---
 
-## 📄 License
+## 🛡️ Security & Broker Compliance
 
-This project is developed as an academic/personal project.
+- **No Order Execution on InvestIQ**: InvestIQ never handles trading funds or depository tokens. All orders execute on the broker's official SEBI-regulated platform.
+- **Verified URLs**: Links are strictly verified to authentic broker domains (`groww.in`, `kite.zerodha.com`, `trade.angelone.in`, `pro.upstox.com`). No fake trading URLs are ever generated.
+- **Server-Side Authentication**: User IDs are extracted strictly from verified Clerk JWT tokens on the server. The backend never trusts client-supplied user IDs.
+- **Isolated User Storage**: Every database query is scoped strictly to the authenticated `userId`.
+- **Read-Only Sync Architecture**: Broker auto-sync requires explicit, opt-in user consent and maintains duplicate prevention before updating holdings.
+
+---
+
+## 🧪 Testing the Complete Investment Flow
+
+1. **Sign In**: Launch `http://localhost:5173`, click **Get Started** or **Sign In** with Clerk.
+2. **Search Stock**: Search for `RELIANCE` or `TCS` in the search bar.
+3. **View Details**: Review the live price, chart, 52-week range, and financials.
+4. **Click Invest Now**:
+   - Click the prominent **Invest Now →** button in the header or in the overview card.
+   - The Investment page opens at `/invest` with the company details preselected.
+5. **Select Broker**:
+   - Choose **Groww**, **Zerodha Kite**, **Angel One**, or **Upstox**.
+   - Click **Invest with Broker**.
+   - The official broker platform opens in a secure new browser tab.
+6. **Record Purchase**:
+   - In InvestIQ, the prompt card offers **Record Investment in Portfolio**.
+   - Click to open the pre-filled modal, adjust quantity and buy price.
+   - Observe live **Total Investment = Quantity × Purchase Price** calculation.
+   - Click **Save Investment**.
+7. **View Portfolio Dashboard**:
+   - Navigate to `/portfolio`.
+   - Inspect total invested, current market value, total profit/loss (₹ and %), broker distribution chart, and individual holdings.
+   - Test **Edit** and **Delete** actions.
+
+---
+
+## 📄 License & Attribution
+
+InvestIQ is developed for Indian equity research, broker routing, and investment portfolio management.
+© 2026 InvestIQ. All rights reserved.
