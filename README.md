@@ -88,7 +88,9 @@ InvestIQ-/
 │   │   ├── nseService.js          # NSE India service & directory fallback
 │   │   └── pythonDataService.js   # yfinance gateway integration
 │   ├── test/
-│   │   └── portfolio.test.js      # 29 automated tests for auth, validation, CRUD & P&L
+│   │   ├── portfolio.test.js      # 29 automated tests for auth, validation, CRUD & P&L
+│   │   ├── brokerIntegration.test.js # 15 automated tests for AES-256-GCM, OAuth, CSRF & sync
+│   │   └── realtimeEngine.test.js # 19 automated tests for IST market hours, indicators, & alerts
 │   ├── server.js                  # Express application entrypoint
 │   └── .env.example               # Backend environment variables template
 ├── frontend/                      # React + Vite Single Page Application
@@ -259,18 +261,117 @@ npm run dev
 
 Run the automated test suites:
 ```bash
-# 1. Run Backend Security, Isolation, Multi-Broker & Token Encryption Tests (44 tests)
+# 1. Run Complete Backend Suites (Security, Broker Integration, Real-Time Engine, Indicators, Alerts) (63 tests)
 cd backend && npm test
 
-# 2. Run Phase 3 Financial Analytics & Valuation tests (7 tests)
+# 2. Run Dedicated Real-Time Market Data & Indicators Suite (19 tests)
+node backend/test/realtimeEngine.test.js
+
+# 3. Run Phase 3 Financial Analytics & Valuation tests (7 tests)
 node frontend/test/portfolioAnalytics.test.mjs
 
-# 3. Run Phase 1 Portfolio Storage calculation & aggregation tests (6 tests)
+# 4. Run Phase 1 Portfolio Storage calculation & aggregation tests (6 tests)
 node frontend/test/portfolioStorage.test.mjs
 
-# 4. Verify Frontend Production Build
+# 5. Verify Frontend Production Build
 cd frontend && npm run build
 ```
+
+---
+
+## 📊 Real-Time Stock Market Dashboard (Phase 5)
+
+InvestIQ features a genuine, production-grade real-time market data streaming architecture designed specifically for Indian equities (NSE / BSE):
+
+### 1. Market Data Provider Selection & Licensing Architecture
+- **Market Data Redistribution Compliance**: SEBI regulations and NSE / BSE exchange guidelines strictly prohibit public broadcast of real-time ticks derived from personal retail broker trading APIs (Zerodha Kite Connect, Upstox, FYERS, Groww) to third parties without an authorized Exchange Data Vendor Agreement directly with **NSE Data & Analytics Ltd** or **BSE Ltd**.
+- **Transparent Freshness Labeling**: InvestIQ never fakes live ticks. Data freshness is honestly labeled:
+  - `LIVE`: Streamed from connected broker session or authorized low-latency vendor.
+  - `DELAYED`: Compliant 15-minute delayed market snapshot.
+  - `MARKET_CLOSED`: Session closed (after 15:30 IST, weekends, or NSE national holidays).
+  - `OFFLINE_SNAPSHOT`: Fallback company profile with verified baseline market metrics when offline.
+
+### 2. Real-Time Streaming Gateway (Server-Sent Events)
+- **Streaming Gateway** (`GET /api/stocks/stream`): Authorized HTTP streaming gateway supporting dynamic symbol subscriptions (`?symbols=RELIANCE,TCS`), user-scoped price alert monitoring (`?token=...`), automatic connection pooling, and 15-second keepalive heartbeats.
+- **Client Manager (`realtimeClient.js`)**: Shared singleton EventSource connection with subscription deduplication, exponential backoff reconnection, and zero token exposure in frontend bundles.
+
+### 3. Professional Candlestick Chart & Multi-Timeframe Selectors
+- **Multi-Timeframe Selection**: `1m`, `5m`, `15m`, `1h`, `1D`, `1W`, and `1M` candles.
+- **Dynamic Tick Absorption**: Real-time incoming ticks update the active candle's close, high, low, and volume dynamically without full chart re-renders.
+- **Interactive Crosshair HUD**: Synchronized readout displaying Date, Open, High, Low, Close, Volume, and active indicator values on cursor hover.
+- **Fullscreen Mode**: Expandable SVG viewport with ESC key shortcut.
+
+### 4. Mathematical Technical Indicators
+- **SMA (20, 50, 200)**: Simple Moving Averages for short, intermediate, and long-term trend analysis.
+- **EMA (9, 20, 50)**: Exponential Moving Averages calculated with multiplier $k = 2 / (N + 1)$.
+- **RSI (14)**: Relative Strength Index with Wilder's exponential smoothing bounded in $[0, 100]$, with 70 overbought and 30 oversold sub-chart thresholds.
+- **MACD (12, 26, 9)**: Moving Average Convergence Divergence line, 9-period Signal line, and color-coded momentum histogram.
+- **Bollinger Bands (20, 2)**: 20-period moving average with $\pm 2\sigma$ standard deviation bands and translucent envelope.
+- **Volume MA (20)**: Volume moving average overlay identifying accumulation and distribution spikes.
+
+### 5. Live Market Overview & Watchlist
+- **Major Indices**: Real-time NIFTY 50, SENSEX, and BANK NIFTY tracking.
+- **Tracked Universe Rankings**: Top 5 Gainers, Top 5 Losers, and Most Active stocks across the tracked NIFTY 50 universe.
+- **Performance Sorting**: Sort watchlist by Daily Return % (Gainers/Losers), Price, or Alphabetical order.
+
+### 6. Real-Time Price Alerts
+- **Configurable Rules**: `ABOVE` target price, `BELOW` target price, or intraday `PERCENT_CHANGE` threshold.
+- **Server-Side Evaluation**: Evaluated against every incoming market quote tick.
+- **Delivery**: Dispatched via real-time stream with audit timestamps and duplicate notification prevention.
+
+---
+
+## 🎨 Professional Editorial Landing Page
+
+InvestIQ features a handcrafted, product-led editorial landing page (`/`) designed with the restraint, precision, and typography of premium developer and financial software (inspired by Linear, Stripe, and Vercel):
+
+### 1. Strict Design System & Color Palette
+- **Background**: `#FAFAF8` (warm editorial alabaster)
+- **Primary Text / Headings**: `#15191E` (deep obsidian)
+- **Secondary / Body Text**: `#64707D` (slate gray)
+- **Hairline Borders**: `#E4E7EB` (neutral border)
+- **Dark Contrast Section**: `#101820` (dense midnight black for trust & final CTA)
+- **Accent Color**: `#176B58` (deep pine forest green)
+- **Accent Hover**: `#115343` (darkened pine green)
+- **Negative Indicator**: `#C0392B` (restrained vermilion red)
+- **Zero Clutter Guarantee**: Strictly zero neon purple/blue gradients, glowing halos, floating 3D spheres, fake testimonials, or fabricated user statistics.
+
+### 2. Page Architecture & Sections
+1. **Sticky Header Navigation**:
+   - Logo with geometric chevron icon, brand typography, and live NSE market status indicator.
+   - Smooth anchor links (`#platform`, `#features`, `#markets`, `#trust`) and Clerk authentication modal buttons (`Sign In`, `Get Started` / `Go to Dashboard`).
+   - Mobile-responsive slide-out menu drawer with accessible backdrop blur.
+2. **Editorial Hero Section**:
+   - Eyebrow: `MARKET INTELLIGENCE, SIMPLIFIED`
+   - Main Headline: `The market moves fast. Stay a step ahead.`
+   - Subheading: `Research stocks, follow market movements, and understand your portfolio—all in one focused workspace.`
+   - Action Row: `Get Started Free →` (opens Clerk signup modal) and `Explore Platform ↓` (smooth scroll to interactive demo).
+   - Micro-trust note: `No credit card required • Connects with India's top 4 brokers • Bank-grade encryption`.
+3. **Realistic Product Demo Canvas**:
+   - Browser chrome frame featuring live Indian equity data: `RELIANCE.NS` trading at `₹2,985.40 (+₹38.20 / +1.30%)`.
+   - Multi-timeframe selector (`1m`, `5m`, `15m`, `1D`, `1W`, `1M`).
+   - Real interactive SVG Candlestick Chart with bull/bear wicks, candle bodies, volume bars, and overlayed 20-period Simple Moving Average (`SMA 20`).
+   - Technical indicator status pills (`SMA 20: ₹2,942.10`, `RSI 14: 58.4 - Neutral Momentum`).
+   - Realistic market statistics grid: Day Range (`₹2,942.00 – ₹2,994.80`), Volume (`4.82M`), Market Cap (`₹20.20T`), P/E (`27.4`).
+4. **Four Core Capabilities**:
+   - **Research Stocks**: Clean fundamentals, quarterly statements, 52-week statistics, and key financial ratios.
+   - **Follow the Market**: Real-time NSE/BSE quotes, intraday movements, multi-period candlesticks, and market hours awareness.
+   - **Understand Your Portfolio**: Aggregated multi-broker holdings, weighted-average purchase prices, live P&L, and asset allocation.
+   - **Connect Supported Brokers**: Read-only synchronization with Groww, Zerodha Kite, Angel One, and Upstox via official OAuth.
+5. **Alternating Editorial Deep-Dives**:
+   - *Feature 1: Technical Precision Without Noise* — Multi-timeframe charts, overlays, volume profiles, and mathematical indicators.
+   - *Feature 2: Multi-Broker Consolidation* — Unified visibility across accounts with zero credential collection and OAuth security.
+   - *Feature 3: Portfolio Accuracy* — Realized vs unrealized P&L, transaction cost impact, and capital allocation across Indian sectors.
+6. **Factual Trust & Transparency Disclosures**:
+   - Market Data Timing: Standard NSE/BSE operating hours (09:15–15:30 IST) with distinct state badges.
+   - Independent Research: Unbiased financial intelligence with no proprietary trading desk or sponsored order flow.
+   - Broker Routing: Orders execute directly on registered member brokerages; InvestIQ never holds client custody.
+   - Capital Risk: Factual compliance disclaimer regarding market volatility and investment risks.
+7. **Dark Final Call to Action (`#101820`)**:
+   - Headline: `Make sense of every market move.`
+   - Direct entry into the platform via Clerk authentication.
+8. **Clean Four-Column Footer**:
+   - Product, Markets, Security & Trust, and Company navigational links with full copyright and compliance statements.
 
 ---
 

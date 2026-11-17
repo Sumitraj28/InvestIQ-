@@ -41,6 +41,40 @@ export const getStockFinancials = async (ticker) => {
   return response.data;
 };
 
+export const getStockQuote = async (ticker) => {
+  const response = await api.get(`/stocks/${ticker}/quote`);
+  return response.data;
+};
+
+export const getStockCandles = async (ticker, timeframe = '1D') => {
+  const response = await api.get(`/stocks/${ticker}/candles`, {
+    params: { timeframe },
+  });
+  return response.data;
+};
+
+export const getMarketOverview = async () => {
+  const response = await api.get('/stocks/overview/market');
+  return response.data;
+};
+
+// ── Real-Time Price Alerts Endpoints ──
+
+export const getPriceAlerts = async (token) => {
+  const response = await api.get('/alerts', createAuthHeaders(token));
+  return response.data;
+};
+
+export const createPriceAlert = async (alertData, token) => {
+  const response = await api.post('/alerts', alertData, createAuthHeaders(token));
+  return response.data;
+};
+
+export const deletePriceAlert = async (id, token) => {
+  const response = await api.delete(`/alerts/${id}`, createAuthHeaders(token));
+  return response.data;
+};
+
 // ── Portfolio & Investment Endpoints ──
 
 export const getPortfolioInvestments = async (token) => {

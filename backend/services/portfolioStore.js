@@ -12,6 +12,7 @@ const BrokerSync = require('../models/BrokerSync');
 const BrokerConnection = require('../models/BrokerConnection');
 const SyncedHolding = require('../models/SyncedHolding');
 const ReconciliationRecord = require('../models/ReconciliationRecord');
+const PriceAlert = require('../models/PriceAlert');
 const { reconcilePortfolio } = require('./brokers/reconciliationService');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -31,6 +32,7 @@ function readLocalStore() {
         brokerConnections: [],
         syncedHoldings: [],
         reconciliationRecords: [],
+        priceAlerts: [],
       };
     }
     const raw = fs.readFileSync(LOCAL_STORE_FILE, 'utf8');
@@ -41,6 +43,7 @@ function readLocalStore() {
       brokerConnections: parsed.brokerConnections || [],
       syncedHoldings: parsed.syncedHoldings || [],
       reconciliationRecords: parsed.reconciliationRecords || [],
+      priceAlerts: parsed.priceAlerts || [],
     };
   } catch (err) {
     console.warn('[PortfolioStore] Error reading local store:', err.message);
@@ -50,6 +53,7 @@ function readLocalStore() {
       brokerConnections: [],
       syncedHoldings: [],
       reconciliationRecords: [],
+      priceAlerts: [],
     };
   }
 }
@@ -489,6 +493,127 @@ async function getUnifiedPortfolio(userId) {
   return reconcilePortfolio(manual, synced);
 }
 
+// ── Real-Time Price Alert Operations ──
+
+async function getPriceAlerts(userId) {
+  if (isMongoConnected()) {
+    return PriceAlert.find({ userId }).sort({ createdAt: -1 });
+  }
+
+  const store = readLocalStore();
+  return (store.priceAlerts || []).filter((a) => a.userId === userId);
+}
+
+async function createPriceAlert(userId, alertData) {
+  const payload = {
+    userId,
+    symbol: String(alertData.symbol).trim().toUpperCase(),
+    companyName: alertData.companyName || alertData.symbol,
+    condition: alertData.condition || 'ABOVE',
+    targetPrice: Number(alertData.targetPrice),
+    thresholdPercent: alertData.thresholdPercent ? Number(alertData.thresholdPercent) : null,
+    status: 'ACTIVE',
+    triggeredAt: null,
+    notificationMessage: '',
+  };
+
+  if (isMongoConnected()) {
+    const alert = new PriceAlert(payload);
+    return await alert.save();
+  }
+
+  const store = readLocalStore();
+  if (!store.priceAlerts) store.priceAlerts = [];
+
+  const newAlert = {
+    _id: `alert_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    ...payload,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  store.priceAlerts.push(newAlert);
+  writeLocalStore(store);
+  return newAlert;
+}
+
+async function deletePriceAlert(userId, alertId) {
+  if (isMongoConnected()) {
+    const res = await PriceAlert.findOneAndDelete({ _id: alertId, userId });
+    return !!res;
+  }
+
+  const store = readLocalStore();
+  if (!store.priceAlerts) return false;
+
+  const initialLen = store.priceAlerts.length;
+  store.priceAlerts = store.priceAlerts.filter(
+    (a) => !(String(a._id || a.id) === String(alertId) && a.userId === userId)
+  );
+
+  const deleted = store.priceAlerts.length < initialLen;
+  if (deleted) writeLocalStore(store);
+  return deleted;
+}
+
+async function evaluateAlertsForQuote(quote) {
+  if (!quote || !quote.symbol || !quote.lastPrice) return [];
+  const symbol = quote.symbol.toUpperCase();
+  const currentPrice = Number(quote.lastPrice);
+  const triggered = [];
+
+  const checkAlert = (alert) => {
+    if (alert.status !== 'ACTIVE') return false;
+    if (alert.condition === 'ABOVE' && currentPrice >= alert.targetPrice) {
+      return `Target breached: ${symbol} is now ₹${currentPrice} (crossed above ₹${alert.targetPrice})`;
+    }
+    if (alert.condition === 'BELOW' && currentPrice <= alert.targetPrice) {
+      return `Target breached: ${symbol} is now ₹${currentPrice} (dropped below ₹${alert.targetPrice})`;
+    }
+    if (alert.condition === 'PERCENT_CHANGE' && alert.thresholdPercent) {
+      if (Math.abs(quote.dayChangePercent) >= alert.thresholdPercent) {
+        return `Volatility alert: ${symbol} moved by ${quote.dayChangePercent}% (threshold: ${alert.thresholdPercent}%)`;
+      }
+    }
+    return null;
+  };
+
+  if (isMongoConnected()) {
+    const activeAlerts = await PriceAlert.find({ symbol, status: 'ACTIVE' });
+    for (const a of activeAlerts) {
+      const msg = checkAlert(a);
+      if (msg) {
+        a.status = 'TRIGGERED';
+        a.triggeredAt = new Date();
+        a.notificationMessage = msg;
+        await a.save();
+        triggered.push(a);
+      }
+    }
+    return triggered;
+  }
+
+  const store = readLocalStore();
+  if (!store.priceAlerts) return [];
+
+  store.priceAlerts.forEach((a) => {
+    if (a.symbol === symbol && a.status === 'ACTIVE') {
+      const msg = checkAlert(a);
+      if (msg) {
+        a.status = 'TRIGGERED';
+        a.triggeredAt = new Date().toISOString();
+        a.notificationMessage = msg;
+        triggered.push(a);
+      }
+    }
+  });
+
+  if (triggered.length > 0) {
+    writeLocalStore(store);
+  }
+  return triggered;
+}
+
 module.exports = {
   getInvestmentsByUser,
   getInvestmentById,
@@ -505,5 +630,9 @@ module.exports = {
   getSyncedHoldings,
   saveSyncedHoldings,
   getUnifiedPortfolio,
+  getPriceAlerts,
+  createPriceAlert,
+  deletePriceAlert,
+  evaluateAlertsForQuote,
   SUPPORTED_BROKERS,
 };

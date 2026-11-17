@@ -535,28 +535,37 @@ async function fetchAndSaveStock(symbol) {
     getHistory(cleanSymbol, 5),
   ]);
 
-  const stockDoc = await Stock.findOneAndUpdate(
-    { ticker: cleanSymbol },
-    {
-      ticker: cleanSymbol,
-      name: summaryData.name,
-      sector: summaryData.sector,
-      industry: summaryData.industry,
-      website: summaryData.website,
-      businessSummary: summaryData.businessSummary,
-      marketCap: summaryData.marketCap,
-      peRatio: summaryData.peRatio,
-      week52High: summaryData.week52High,
-      week52Low: summaryData.week52Low,
-      lastPrice: priceData.lastPrice,
-      dayChangePercent: priceData.dayChangePercent,
-      history5y: historyData,
-      lastFetchedAt: new Date(),
-    },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+  const docData = {
+    ticker: cleanSymbol,
+    name: summaryData.name,
+    sector: summaryData.sector,
+    industry: summaryData.industry,
+    website: summaryData.website,
+    businessSummary: summaryData.businessSummary,
+    marketCap: summaryData.marketCap,
+    peRatio: summaryData.peRatio,
+    week52High: summaryData.week52High,
+    week52Low: summaryData.week52Low,
+    lastPrice: priceData.lastPrice,
+    dayChangePercent: priceData.dayChangePercent,
+    history5y: historyData,
+    lastFetchedAt: new Date(),
+  };
 
-  return stockDoc;
+  const mongoose = require('mongoose');
+  if (mongoose.connection && mongoose.connection.readyState === 1) {
+    try {
+      return await Stock.findOneAndUpdate(
+        { ticker: cleanSymbol },
+        docData,
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } catch (err) {
+      console.warn(`[nseService] MongoDB update failed for ${cleanSymbol}:`, err.message);
+    }
+  }
+
+  return docData;
 }
 
 module.exports = {

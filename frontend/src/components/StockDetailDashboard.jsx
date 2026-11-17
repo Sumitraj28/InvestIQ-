@@ -25,12 +25,15 @@ import {
   Sparkles,
   TrendingUp,
   Wallet,
+  Zap,
 } from 'lucide-react';
 import AiCompanyBrief from './AiCompanyBrief';
 import CandlestickChart from './CandlestickChart';
 import CompanyLogo from './CompanyLogo';
 import SignalBadge from './SignalBadge';
-import { getStockFinancials } from '../services/api';
+import PriceAlertModal from './PriceAlertModal';
+import { getStockFinancials, getStockCandles } from '../services/api';
+import realtimeClient from '../services/realtimeClient';
 
 function FinancialTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -178,7 +181,46 @@ export default function StockDetailDashboard({
 }) {
   const navigate = useNavigate();
   const [selectedRange, setSelectedRange] = useState('1Y');
-  const [chartType, setChartType] = useState('line');
+  const [chartType, setChartType] = useState('candle');
+  const [activeCandleTimeframe, setActiveCandleTimeframe] = useState('1D');
+  const [candleData, setCandleData] = useState(null);
+  const [liveTick, setLiveTick] = useState(null);
+  const [priceFlash, setPriceFlash] = useState(null);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+
+  // Subscribe to real-time market data stream for this stock
+  useEffect(() => {
+    if (!stock?.ticker) return;
+    const clean = stock.ticker.replace(/\.(NS|BO)$/i, '');
+
+    const unsubscribe = realtimeClient.subscribe(clean, (tick) => {
+      setLiveTick(tick);
+      const isUp = Number(tick.dayChangePercent) >= 0;
+      setPriceFlash(isUp ? 'flash-up' : 'flash-down');
+      const timer = setTimeout(() => setPriceFlash(null), 700);
+      return () => clearTimeout(timer);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [stock?.ticker]);
+
+  // Load genuine multi-timeframe candles when candlestick chart is active or timeframe changes
+  useEffect(() => {
+    if (!stock?.ticker || chartType !== 'candle') return;
+    const clean = stock.ticker.replace(/\.(NS|BO)$/i, '');
+
+    getStockCandles(clean, activeCandleTimeframe)
+      .then((res) => {
+        if (res.success && Array.isArray(res.candles)) {
+          setCandleData(res.candles);
+        }
+      })
+      .catch((err) => {
+        console.warn('[StockDetailDashboard] Timeframe candles fetch notice:', err.message);
+      });
+  }, [stock?.ticker, activeCandleTimeframe, chartType]);
 
   const chartData = useMemo(() => (
     history
@@ -212,14 +254,20 @@ export default function StockDetailDashboard({
 
   const latest = filteredData[filteredData.length - 1] || chartData[chartData.length - 1];
   const first = filteredData[0] || chartData[0];
-  const latestPrice = Number(stock.lastPrice || latest?.close || 0);
-  const dayChangePercent = Number(stock.dayChangePercent || 0);
-  const dayChange = latestPrice * (dayChangePercent / 100);
+  const latestPrice = Number(liveTick?.lastPrice || stock.lastPrice || latest?.close || 0);
+  const dayChangePercent = Number(liveTick?.dayChangePercent ?? stock.dayChangePercent ?? 0);
+  const dayChange = Number(liveTick?.dayChange ?? (latestPrice * (dayChangePercent / 100)));
   const trendUp = dayChangePercent >= 0;
-  const todayLow = latest?.low || latestPrice * 0.98;
-  const todayHigh = latest?.high || latestPrice * 1.02;
+  const todayLow = Number(liveTick?.dayLow || latest?.low || latestPrice * 0.98);
+  const todayHigh = Number(liveTick?.dayHigh || latest?.high || latestPrice * 1.02);
+  const todayOpen = Number(liveTick?.open || stock.open || latest?.open || latestPrice * 0.99);
+  const prevClose = Number(liveTick?.prevClose || stock.prevClose || (latestPrice - dayChange));
+  const todayVolume = Number(liveTick?.volume || latest?.volume || 1500000);
   const week52Low = Number(stock.week52Low || Math.min(...chartData.map((item) => item.low || item.close)));
   const week52High = Number(stock.week52High || Math.max(...chartData.map((item) => item.high || item.close)));
+  const dataFreshness = liveTick?.dataFreshness || (stock.stale ? 'SNAPSHOT' : 'LIVE');
+  const isMarketOpen = liveTick?.marketStatus?.isMarketOpen ?? false;
+  const sessionDesc = liveTick?.marketStatus?.sessionDescription || 'NSE Regular Trading';
   const [financialPeriod, setFinancialPeriod] = useState('Yearly');
   const [financials, setFinancials] = useState(null);
   const [financialsLoading, setFinancialsLoading] = useState(false);
@@ -321,8 +369,36 @@ export default function StockDetailDashboard({
               <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
                 {stock.name || stock.ticker}
               </h1>
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <span className="text-3xl font-bold text-slate-900">{formatINR(latestPrice)}</span>
+
+              {/* Real-time Status Badge */}
+              <div className="flex items-center space-x-2 mt-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  {isMarketOpen && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  )}
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                    isMarketOpen ? 'bg-emerald-500' : 'bg-slate-400'
+                  }`}></span>
+                </span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                  {dataFreshness} • {isMarketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
+                </span>
+                <span className="text-[11px] text-slate-400">•</span>
+                <span className="text-[11px] text-slate-500">
+                  {sessionDesc}
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className={`text-3xl font-bold transition-all duration-300 rounded px-1.5 py-0.5 ${
+                  priceFlash === 'flash-up'
+                    ? 'bg-emerald-100 text-emerald-800 ring-2 ring-emerald-400'
+                    : priceFlash === 'flash-down'
+                    ? 'bg-rose-100 text-rose-800 ring-2 ring-rose-400'
+                    : 'text-slate-900'
+                }`}>
+                  {formatINR(latestPrice)}
+                </span>
                 <span className={`text-sm font-bold ${trendUp ? 'text-emerald-600' : 'text-rose-600'}`}>
                   {trendUp ? '+' : ''}{formatINR(dayChange, { minimumFractionDigits: 2 })} ({trendUp ? '+' : ''}{dayChangePercent.toFixed(2)}%)
                 </span>
@@ -369,10 +445,20 @@ export default function StockDetailDashboard({
                 <span>Invest Now</span>
                 <ArrowRight className="h-4 w-4" />
               </button>
-              <button type="button" className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700" aria-label="Set price alert">
+              <button
+                type="button"
+                onClick={() => setIsAlertModalOpen(true)}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition"
+                aria-label="Set price alert"
+                title="Set Real-Time Price Alert"
+              >
                 <Bell className="h-5 w-5" />
               </button>
-              <button type="button" className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700" aria-label="Save stock">
+              <button
+                type="button"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-slate-700 hover:border-emerald-300 hover:text-emerald-700"
+                aria-label="Save stock"
+              >
                 <Bookmark className="h-5 w-5" />
               </button>
             </div>
@@ -384,9 +470,15 @@ export default function StockDetailDashboard({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Loading chart
               </div>
-            ) : filteredData.length ? (
+            ) : (chartType === 'candle' ? (candleData || filteredData).length : filteredData.length) ? (
               chartType === 'candle' ? (
-                <CandlestickChart data={filteredData} height={360} />
+                <CandlestickChart
+                  data={candleData || filteredData}
+                  height={380}
+                  activeTimeframe={activeCandleTimeframe}
+                  onTimeframeChange={setActiveCandleTimeframe}
+                  liveTick={liveTick}
+                />
               ) : (
                 <div className="h-[360px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -710,6 +802,69 @@ export default function StockDetailDashboard({
           </div>
         </section>
 
+        {/* Section 5: Market Statistics */}
+        <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Zap className="h-5 w-5 text-emerald-600" />
+              Real-Time Market Statistics
+            </h2>
+            <span className="text-xs text-slate-400 font-medium">NSE Exchange Normalized</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Open Price</div>
+              <div className="text-base font-bold text-slate-900 mt-1">{formatINR(todayOpen)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Previous Close</div>
+              <div className="text-base font-bold text-slate-900 mt-1">{formatINR(prevClose)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Day High</div>
+              <div className="text-base font-bold text-emerald-600 mt-1">{formatINR(todayHigh)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Day Low</div>
+              <div className="text-base font-bold text-rose-600 mt-1">{formatINR(todayLow)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Volume (Shares)</div>
+              <div className="text-base font-bold text-slate-900 mt-1">
+                {todayVolume >= 10000000
+                  ? `${(todayVolume / 10000000).toFixed(2)} Cr`
+                  : todayVolume >= 100000
+                  ? `${(todayVolume / 100000).toFixed(2)} L`
+                  : todayVolume.toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">52-Week High</div>
+              <div className="text-base font-bold text-slate-900 mt-1">{formatINR(week52High)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">52-Week Low</div>
+              <div className="text-base font-bold text-slate-900 mt-1">{formatINR(week52Low)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Market Capitalization</div>
+              <div className="text-base font-bold text-slate-900 mt-1">{formatCompactINR(stock.marketCap)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">P/E Ratio (TTM)</div>
+              <div className="text-base font-bold text-slate-900 mt-1">{formatRatio(stock.peRatio)}</div>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
+              <div className="text-xs text-slate-500 font-medium">Market Status</div>
+              <div className="text-xs font-bold text-emerald-700 mt-1.5 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                <span>{dataFreshness}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Bottom Invest Now Section */}
         <section className="mt-10 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <div>
@@ -729,6 +884,15 @@ export default function StockDetailDashboard({
           </button>
         </section>
       </div>
+
+      {/* Real-time Price Alert Modal */}
+      <PriceAlertModal
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+        symbol={stock.ticker}
+        companyName={stock.name}
+        currentPrice={latestPrice}
+      />
     </div>
   );
 }

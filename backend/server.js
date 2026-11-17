@@ -10,6 +10,7 @@ const connectDB = require('./config/db');
 const stockRoutes = require('./routes/stockRoutes');
 const portfolioRoutes = require('./routes/portfolioRoutes');
 const brokerRoutes = require('./routes/brokerRoutes');
+const alertRoutes = require('./routes/alertRoutes');
 
 // Initialize express app
 const app = express();
@@ -34,6 +35,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/stocks', stockRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/brokers', brokerRoutes);
+app.use('/api/alerts', alertRoutes);
 
 // 404 Handler
 app.use((req, res) => {

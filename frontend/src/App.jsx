@@ -191,146 +191,164 @@ function AppHeader() {
   );
 }
 
+function AppFooter() {
+  return (
+    <footer className="border-t border-slate-200 bg-slate-50">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
+          {/* Brand */}
+          <div className="md:col-span-1">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0B3D2C] text-white">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <span className="font-extrabold text-xl tracking-tight text-[#0B3D2C]">
+                Invest<span className="text-emerald-500">IQ</span>
+              </span>
+            </div>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Your intelligent companion for Indian equity market analysis, powered by live NSE data, broker redirection, and portfolio tracking.
+            </p>
+          </div>
+
+          {/* Products */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Products</h3>
+            <ul className="space-y-3 text-sm text-slate-500">
+              <li className="hover:text-emerald-600 cursor-pointer transition">
+                <Link to="/invest">Broker Investing</Link>
+              </li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">
+                <Link to="/portfolio">Portfolio Manager</Link>
+              </li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">
+                <Link to="/watchlist">Watchlist</Link>
+              </li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">
+                <Link to="/dashboard">Dashboard</Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Supported Brokers */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Supported Brokers</h3>
+            <ul className="space-y-3 text-sm text-slate-500">
+              <li className="hover:text-emerald-600 cursor-pointer transition">Groww</li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">Zerodha Kite</li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">Angel One</li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">Upstox</li>
+            </ul>
+          </div>
+
+          {/* Company */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Company</h3>
+            <ul className="space-y-3 text-sm text-slate-500">
+              <li className="hover:text-emerald-600 cursor-pointer transition">
+                <Link to="/">Platform Overview</Link>
+              </li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">Security & Privacy</li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">SEBI Compliance Notes</li>
+              <li className="hover:text-emerald-600 cursor-pointer transition">Terms of Service</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-10 border-t border-slate-200 pt-8 flex flex-col items-center justify-between gap-3 sm:flex-row">
+          <p className="text-sm text-slate-500">© {new Date().getFullYear()} InvestIQ — Indian equity market intelligence & portfolio management.</p>
+          <p className="text-xs text-slate-400">Integrated with Groww, Zerodha, Angel One & Upstox</p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function AppShell() {
+  const location = useLocation();
+  const isLandingPage = location.pathname === '/';
+
+  return (
+    <div className={`min-h-screen flex flex-col ${isLandingPage ? 'bg-[#FAFAF8]' : 'bg-white'} text-slate-900`}>
+      {!isLandingPage && <AppHeader />}
+
+      {/* Main Content Area */}
+      <main className={`flex-1 ${isLandingPage ? 'bg-[#FAFAF8]' : 'bg-slate-50'}`}>
+        <Routes>
+          {/* Public landing page */}
+          <Route path="/" element={<Home />} />
+
+          {/* Protected routes — require auth */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/portfolio"
+            element={
+              <ProtectedRoute>
+                <PortfolioPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/connected-brokers"
+            element={
+              <ProtectedRoute>
+                <ConnectedBrokersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/brokers"
+            element={
+              <ProtectedRoute>
+                <ConnectedBrokersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invest"
+            element={
+              <ProtectedRoute>
+                <InvestmentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/investment"
+            element={
+              <ProtectedRoute>
+                <InvestmentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/company/:ticker"
+            element={
+              <ProtectedRoute>
+                <CompanyPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Watchlist route */}
+          <Route path="/watchlist" element={<Watchlist />} />
+        </Routes>
+      </main>
+
+      {!isLandingPage && <AppFooter />}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <Router>
-      <div className="min-h-screen flex flex-col bg-white text-slate-900">
-        <AppHeader />
-
-        {/* Main Content Area */}
-        <main className="flex-1 bg-slate-50">
-          <Routes>
-            {/* Public landing page */}
-            <Route path="/" element={<Home />} />
-
-            {/* Protected routes — require auth */}
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/portfolio"
-              element={
-                <ProtectedRoute>
-                  <PortfolioPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/connected-brokers"
-              element={
-                <ProtectedRoute>
-                  <ConnectedBrokersPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/brokers"
-              element={
-                <ProtectedRoute>
-                  <ConnectedBrokersPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/invest"
-              element={
-                <ProtectedRoute>
-                  <InvestmentPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/investment"
-              element={
-                <ProtectedRoute>
-                  <InvestmentPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/company/:ticker"
-              element={
-                <ProtectedRoute>
-                  <CompanyPage />
-                </ProtectedRoute>
-              }
-            />
-            {/* Watchlist route */}
-            <Route path="/watchlist" element={<Watchlist />} />
-          </Routes>
-        </main>
-
-        {/* Footer */}
-        <footer className="border-t border-slate-200 bg-slate-50">
-          <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
-              {/* Brand */}
-              <div className="md:col-span-1">
-                <div className="flex items-center gap-2.5 mb-4">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0B3D2C] text-white">
-                    <BarChart3 className="w-5 h-5" />
-                  </div>
-                  <span className="font-extrabold text-xl tracking-tight text-[#0B3D2C]">
-                    Invest<span className="text-emerald-500">IQ</span>
-                  </span>
-                </div>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  Your intelligent companion for Indian equity market analysis, powered by live NSE data, broker redirection, and portfolio tracking.
-                </p>
-              </div>
-
-              {/* Products */}
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Products</h3>
-                <ul className="space-y-3 text-sm text-slate-500">
-                  <li className="hover:text-emerald-600 cursor-pointer transition">
-                    <Link to="/invest">Broker Investing</Link>
-                  </li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">
-                    <Link to="/portfolio">Portfolio Manager</Link>
-                  </li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">
-                    <Link to="/watchlist">Watchlist</Link>
-                  </li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Mutual Funds</li>
-                </ul>
-              </div>
-
-              {/* Supported Brokers */}
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Supported Brokers</h3>
-                <ul className="space-y-3 text-sm text-slate-500">
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Groww</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Zerodha Kite</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Angel One</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Upstox</li>
-                </ul>
-              </div>
-
-              {/* Company */}
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Company</h3>
-                <ul className="space-y-3 text-sm text-slate-500">
-                  <li className="hover:text-emerald-600 cursor-pointer transition">About Us</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Security & Privacy</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">SEBI Compliance Notes</li>
-                  <li className="hover:text-emerald-600 cursor-pointer transition">Terms of Service</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-10 border-t border-slate-200 pt-8 flex flex-col items-center justify-between gap-3 sm:flex-row">
-              <p className="text-sm text-slate-500">© {new Date().getFullYear()} InvestIQ — Indian equity market intelligence & portfolio management.</p>
-              <p className="text-xs text-slate-400">Integrated with Groww, Zerodha, Angel One & Upstox</p>
-            </div>
-          </div>
-        </footer>
-      </div>
+      <AppShell />
     </Router>
   );
 }

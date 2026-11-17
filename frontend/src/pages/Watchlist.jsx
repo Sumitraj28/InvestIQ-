@@ -13,6 +13,8 @@ import {
   Trash2,
   ExternalLink,
   RefreshCw,
+  ArrowUpDown,
+  Zap,
 } from 'lucide-react';
 import CompanyLogo from '../components/CompanyLogo';
 import Sparkline from '../components/Sparkline';
@@ -20,6 +22,7 @@ import Perf52WSlider from '../components/Perf52WSlider';
 import WatchlistSignalBadge from '../components/WatchlistSignalBadge';
 import AddStockModal from '../components/AddStockModal';
 import { getStock } from '../services/api';
+import realtimeClient from '../services/realtimeClient';
 import {
   getWatchlist,
   addToWatchlist,
@@ -69,6 +72,7 @@ export default function Watchlist() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
+  const [sortBy, setSortBy] = useState('default');
   const [showNewListModal, setShowNewListModal] = useState(false);
   const [newListName, setNewListName] = useState('');
 
@@ -82,7 +86,49 @@ export default function Watchlist() {
     loadTickers(activeListId);
   }, [activeListId, loadTickers]);
 
-  // Fetch stock data for tickers
+  // Subscribe to real-time tick streaming for all watchlist symbols
+  useEffect(() => {
+    if (!tickerList || tickerList.length === 0) return;
+
+    const cleanSymbols = tickerList.map((t) => t.replace(/\.(NS|BO)$/i, ''));
+
+    const unsubscribe = realtimeClient.subscribe(cleanSymbols, (tick) => {
+      const matchSymbol = tick.symbol?.toUpperCase();
+      if (!matchSymbol) return;
+
+      setStocksData((prev) => {
+        // Find matching ticker key (either 'RELIANCE' or 'RELIANCE.NS')
+        const targetKey = Object.keys(prev).find(
+          (k) => k.replace(/\.(NS|BO)$/i, '').toUpperCase() === matchSymbol
+        ) || `${matchSymbol}.NS`;
+
+        const existing = prev[targetKey];
+        if (!existing || !existing.data) return prev;
+
+        return {
+          ...prev,
+          [targetKey]: {
+            ...existing,
+            data: {
+              ...existing.data,
+              lastPrice: Number(tick.lastPrice),
+              dayChangePercent: Number(tick.dayChangePercent),
+              dayChange: Number(tick.dayChange),
+              volume: Number(tick.volume || existing.data.volume),
+              dataFreshness: tick.dataFreshness || 'LIVE',
+              lastUpdated: tick.timestamp || new Date().toISOString(),
+            },
+          },
+        };
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [tickerList]);
+
+  // Fetch initial stock data for tickers
   useEffect(() => {
     let isCancelled = false;
 
@@ -167,18 +213,50 @@ export default function Watchlist() {
     }
   };
 
-  // Filtered rows based on search input
+  // Filtered & Sorted rows based on search input and performance sort criteria
   const filteredRows = useMemo(() => {
-    if (!filterQuery.trim()) return tickerList;
-    const q = filterQuery.trim().toUpperCase();
+    let rows = [...tickerList];
 
-    return tickerList.filter((ticker) => {
-      const info = stocksData[ticker]?.data;
-      const cleanTicker = ticker.replace('.NS', '').toUpperCase();
-      const name = (info?.name || '').toUpperCase();
-      return cleanTicker.includes(q) || name.includes(q);
-    });
-  }, [tickerList, filterQuery, stocksData]);
+    if (filterQuery.trim()) {
+      const q = filterQuery.trim().toUpperCase();
+      rows = rows.filter((ticker) => {
+        const info = stocksData[ticker]?.data;
+        const cleanTicker = ticker.replace(/\.(NS|BO)$/i, '').toUpperCase();
+        const name = (info?.name || '').toUpperCase();
+        return cleanTicker.includes(q) || name.includes(q);
+      });
+    }
+
+    if (sortBy === 'gainers') {
+      rows.sort((a, b) => {
+        const diffA = Number(stocksData[a]?.data?.dayChangePercent || 0);
+        const diffB = Number(stocksData[b]?.data?.dayChangePercent || 0);
+        return diffB - diffA;
+      });
+    } else if (sortBy === 'losers') {
+      rows.sort((a, b) => {
+        const diffA = Number(stocksData[a]?.data?.dayChangePercent || 0);
+        const diffB = Number(stocksData[b]?.data?.dayChangePercent || 0);
+        return diffA - diffB;
+      });
+    } else if (sortBy === 'price_desc') {
+      rows.sort((a, b) => {
+        const priceA = Number(stocksData[a]?.data?.lastPrice || 0);
+        const priceB = Number(stocksData[b]?.data?.lastPrice || 0);
+        return priceB - priceA;
+      });
+    } else if (sortBy === 'price_asc') {
+      rows.sort((a, b) => {
+        const priceA = Number(stocksData[a]?.data?.lastPrice || 0);
+        const priceB = Number(stocksData[b]?.data?.lastPrice || 0);
+        return priceA - priceB;
+      });
+    } else if (sortBy === 'alphabetical') {
+      rows.sort((a, b) => a.localeCompare(b));
+    }
+
+    return rows;
+  }, [tickerList, filterQuery, stocksData, sortBy]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -273,27 +351,48 @@ export default function Watchlist() {
           </button>
         </div>
 
-        {/* In-Watchlist Search Bar */}
-        <div className="relative w-full sm:w-72">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-            <Search className="h-4 w-4" />
-          </div>
-          <input
-            type="text"
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Search in watchlist..."
-            className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-8 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-          />
-          {filterQuery && (
-            <button
-              type="button"
-              onClick={() => setFilterQuery('')}
-              className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600"
+        {/* In-Watchlist Controls: Sort & Search */}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Performance Sort Dropdown */}
+          <div className="flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 shadow-xs">
+            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer text-xs"
+              title="Sort Watchlist"
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+              <option value="default">Default Order</option>
+              <option value="gainers">Top Gainers (%)</option>
+              <option value="losers">Top Losers (%)</option>
+              <option value="price_desc">Price: High to Low</option>
+              <option value="price_asc">Price: Low to High</option>
+              <option value="alphabetical">Alphabetical (A-Z)</option>
+            </select>
+          </div>
+
+          {/* Search Bar */}
+          <div className="relative w-full sm:w-60">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+              <Search className="h-4 w-4" />
+            </div>
+            <input
+              type="text"
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="Search in watchlist..."
+              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-8 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            />
+            {filterQuery && (
+              <button
+                type="button"
+                onClick={() => setFilterQuery('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
