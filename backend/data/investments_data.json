@@ -1,21 +1,21 @@
 {
   "investments": [
     {
-      "_id": "inv_1794857700210_8g47l9e",
+      "_id": "inv_1794897623593_fqmnfsz",
       "userId": "user_test_alpha_123",
       "companyName": "Tata Consultancy Services",
       "stockSymbol": "TCS",
       "brokerName": "Zerodha Kite",
       "quantity": 5,
       "purchasePrice": 3800,
-      "purchaseDate": "2026-11-16T19:35:00.210Z",
+      "purchaseDate": "2026-11-17T06:40:23.593Z",
       "exchange": "NSE",
       "notes": "",
       "totalInvestment": 19000,
       "source": "manual",
       "brokerOrderId": null,
-      "createdAt": "2026-11-16T19:35:00.210Z",
-      "updatedAt": "2026-11-16T19:35:00.210Z"
+      "createdAt": "2026-11-17T06:40:23.593Z",
+      "updatedAt": "2026-11-17T06:40:23.593Z"
     }
   ],
   "brokerSyncs": [
@@ -25,10 +25,13 @@
       "brokerDisplayName": "Groww",
       "status": "connected",
       "consentGiven": true,
-      "lastSyncedAt": "2026-11-16T19:35:00.213Z",
+      "lastSyncedAt": "2026-11-17T06:40:23.597Z",
       "syncMessage": "User consent recorded for groww. Official OAuth authorization verified.",
-      "accountMaskedId": "GRO-•••5143",
-      "updatedAt": "2026-11-16T19:35:00.213Z"
+      "accountMaskedId": "GRO-•••4663",
+      "updatedAt": "2026-11-17T06:40:23.597Z"
     }
-  ]
+  ],
+  "brokerConnections": [],
+  "syncedHoldings": [],
+  "reconciliationRecords": []
 }

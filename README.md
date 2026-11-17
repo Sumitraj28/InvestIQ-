@@ -7,15 +7,31 @@
 ## 🌟 Overview & Key Capabilities
 
 InvestIQ empowers Indian equity investors to:
-1. **Analyze Indian Equities** — Live NSE prices, 5-year interactive charts, 52-week ranges, fundamentals, quarterly/yearly financials, and AI company briefings.
+1. **Analyze Indian Equities** — Live NSE prices, interactive Line and Candlestick charts with real OHLC wicks and volume bars, 52-week ranges, fundamentals, quarterly/yearly financials, and AI company briefings.
 2. **1-Click Broker Redirection** — Prominent **Invest Now →** routing to verified order pages on India's top stockbrokers:
    - **Groww**
    - **Zerodha Kite**
    - **Angel One**
    - **Upstox**
-3. **Dedicated Portfolio Dashboard** — Record stock purchases, track total invested capital, live portfolio value, net profit/loss (₹ and %), broker-wise investment distribution charts, and edit/delete holdings.
-4. **Broker Sync Architecture** — Future-ready read-only synchronization with explicit user consent, timestamps, and duplicate prevention.
-5. **Secure Authentication** — Clerk Authentication protecting investment and portfolio routes, with backend Clerk JWT verification isolating data per authenticated user.
+3. **Phase 1 & Phase 2 Portfolio Management** — Record purchases with whole shares, buy prices, and transaction charges (`Purchase Value = Qty × Price`, `Total Cost = Purchase Value + Charges`).
+4. **Weighted-Average Cost Basis** — Automatically aggregates multiple purchases of the same stock under the same broker into a clean holdings table with weighted-average buy price (`Sum(Qty × Price) / Sum(Qty)`).
+5. **Phase 3 Advanced Financial Analytics & Live Valuation**:
+   - **6 Metric Summary Cards**: Total Invested, Current Value, Unrealized P&L, Return %, Total Holdings, and Best/Worst Performers with data freshness badge and manual debounced refresh.
+   - **Market Quote Integration**: Distinguishes Live, Delayed, Previous Close, and Unavailable prices with partial valuation notices.
+   - **Allocation Charts**: Multi-mode Recharts visualization for Company (Donut), Broker (Bar), and Sector (Pie) distributions.
+   - **Historical Performance Trajectory**: Interactive Line Chart tracking portfolio valuation over time with period selectors (`1W`, `1M`, `3M`, `6M`, `1Y`, `ALL`).
+   - **Gainers & Losers**: Top 5 Gainers and Top 5 Losers cards with return %, P&L, and links to stock research.
+   - **Broker Breakdown**: Capital and P&L cards segmented by broker.
+   - **Rule-Based Insights**: Objective descriptive insights (Concentration, Win Rate, Sector Exposure, Broker Spread, Data Coverage).
+   - **Report Export**: 1-click CSV download and clean Print/PDF stylesheet.
+6. **Phase 4 Secure Broker Integration & Multi-Broker Sync**:
+   - **Connected Brokers Hub** (`/connected-brokers`): Direct management of Zerodha Kite, Upstox, Angel One, and Groww connections.
+   - **Zero-Credential Security Architecture**: Strict enforcement of zero-password and zero-TOTP collection. Direct OAuth authorization via official broker portals only.
+   - **Token Encryption at Rest**: AES-256-GCM encryption with 96-bit IVs and authentication tags for all access and refresh tokens.
+   - **Anti-CSRF Protection**: Cryptographic HMAC-SHA256 state tokens validating user and broker context across OAuth redirects.
+   - **Unified Holdings Deduplication**: Intelligent reconciliation engine matching manual transaction logs with broker snapshots to prevent double-counting.
+   - **Rate-Limited Synchronizer**: 60-second minimum sync throttle, daily session expiry tracking, and resilient offline preservation.
+7. **User Data Isolation** — Clerk Authentication integration scoping client storage (`investiq_portfolio_${userId}`) and backend server records per authenticated user.
 
 ---
 
@@ -213,12 +229,25 @@ npm run dev
 - `GET /api/portfolio/prices?symbols=RELIANCE,TCS` — Batch price lookup for portfolio stocks.
 - `GET /api/portfolio/brokers` — Read broker sync status for supported brokers.
 - `POST /api/portfolio/brokers/sync` — Trigger broker holding sync with explicit user consent.
+- `GET /api/portfolio/synced-holdings` — List synchronized holdings from connected brokers.
+- `GET /api/portfolio/unified` — Retrieve deduplicated portfolio (Manual + Synced).
+- `GET /api/portfolio/reconciliation` — Retrieve reconciliation records and variance review logs.
+
+### Broker Connection Endpoints
+- `GET /api/brokers` — Catalog of supported brokers, auth methods, and official docs.
+- `GET /api/brokers/connections` — List user's active broker connections with connection status.
+- `POST /api/brokers/:broker/connect` — Initiate official OAuth flow with anti-CSRF state token.
+- `GET /api/brokers/:broker/callback` — OAuth callback handler, exchanging token & encrypting at rest.
+- `POST /api/brokers/connections/:broker/sync` — Rate-limited manual holdings synchronization.
+- `DELETE /api/brokers/connections/:broker` — Disconnect broker account and revoke tokens.
 
 ---
 
 ## 🛡️ Security & Broker Compliance
 
 - **No Order Execution on InvestIQ**: InvestIQ never handles trading funds or depository tokens. All orders execute on the broker's official SEBI-regulated platform.
+- **Zero-Credential Collection**: InvestIQ never collects or stores broker passwords, PINs, or TOTP codes.
+- **AES-256-GCM Token Encryption**: Broker tokens are encrypted at rest with 96-bit initialization vectors.
 - **Verified URLs**: Links are strictly verified to authentic broker domains (`groww.in`, `kite.zerodha.com`, `trade.angelone.in`, `pro.upstox.com`). No fake trading URLs are ever generated.
 - **Server-Side Authentication**: User IDs are extracted strictly from verified Clerk JWT tokens on the server. The backend never trusts client-supplied user IDs.
 - **Isolated User Storage**: Every database query is scoped strictly to the authenticated `userId`.
@@ -226,11 +255,30 @@ npm run dev
 
 ---
 
-## 🧪 Testing the Complete Investment Flow
+## 🧪 Automated Tests & Build Verification
+
+Run the automated test suites:
+```bash
+# 1. Run Backend Security, Isolation, Multi-Broker & Token Encryption Tests (44 tests)
+cd backend && npm test
+
+# 2. Run Phase 3 Financial Analytics & Valuation tests (7 tests)
+node frontend/test/portfolioAnalytics.test.mjs
+
+# 3. Run Phase 1 Portfolio Storage calculation & aggregation tests (6 tests)
+node frontend/test/portfolioStorage.test.mjs
+
+# 4. Verify Frontend Production Build
+cd frontend && npm run build
+```
+
+---
+
+## 🧭 Testing the Complete Investment Flow
 
 1. **Sign In**: Launch `http://localhost:5173`, click **Get Started** or **Sign In** with Clerk.
 2. **Search Stock**: Search for `RELIANCE` or `TCS` in the search bar.
-3. **View Details**: Review the live price, chart, 52-week range, and financials.
+3. **View Details**: Review the live price, Line/Candlestick chart, 52-week range, and financials.
 4. **Click Invest Now**:
    - Click the prominent **Invest Now →** button in the header or in the overview card.
    - The Investment page opens at `/invest` with the company details preselected.
@@ -239,14 +287,16 @@ npm run dev
    - Click **Invest with Broker**.
    - The official broker platform opens in a secure new browser tab.
 6. **Record Purchase**:
-   - In InvestIQ, the prompt card offers **Record Investment in Portfolio**.
-   - Click to open the pre-filled modal, adjust quantity and buy price.
-   - Observe live **Total Investment = Quantity × Purchase Price** calculation.
+   - In InvestIQ, the prompt banner displays **I've Completed My Investment** or **Add to My Portfolio**.
+   - Click to open the pre-filled modal, enter quantity (whole shares), buy price, and optional transaction charges.
+   - Observe live **Total Cost = Purchase Value + Transaction Charges** calculation.
    - Click **Save Investment**.
 7. **View Portfolio Dashboard**:
    - Navigate to `/portfolio`.
-   - Inspect total invested, current market value, total profit/loss (₹ and %), broker distribution chart, and individual holdings.
-   - Test **Edit** and **Delete** actions.
+   - Inspect **Total Invested Amount**, **Total Transactions**, **Total Companies**, and **Brokers Represented**.
+   - View **Aggregated Holdings** table (with weighted-average purchase prices).
+   - View **Transaction History** table with search, broker/company filters, and Edit/Delete controls.
+   - Test **Edit** and **Delete** (with confirmation dialog).
 
 ---
 

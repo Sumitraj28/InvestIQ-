@@ -9,6 +9,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const connectDB = require('./config/db');
 const stockRoutes = require('./routes/stockRoutes');
 const portfolioRoutes = require('./routes/portfolioRoutes');
+const brokerRoutes = require('./routes/brokerRoutes');
 
 // Initialize express app
 const app = express();
@@ -32,6 +33,7 @@ app.get('/api/health', (req, res) => {
 // Mount Routes
 app.use('/api/stocks', stockRoutes);
 app.use('/api/portfolio', portfolioRoutes);
+app.use('/api/brokers', brokerRoutes);
 
 // 404 Handler
 app.use((req, res) => {

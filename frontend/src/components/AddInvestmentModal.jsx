@@ -1,15 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@clerk/react';
-import { AlertCircle, Calendar, Check, DollarSign, Hash, Layers, Loader2, Sparkles, Tag, X } from 'lucide-react';
-import { addInvestment, updateInvestment } from '../services/api';
+import { useAuth, useUser } from '@clerk/react';
+import {
+  AlertCircle,
+  Building2,
+  Calendar,
+  Check,
+  CheckCircle2,
+  DollarSign,
+  Hash,
+  Layers,
+  Loader2,
+  PlusCircle,
+  Receipt,
+  Sparkles,
+  Tag,
+  X,
+} from 'lucide-react';
+import { addInvestment as apiAddInvestment, updateInvestment as apiUpdateInvestment } from '../services/api';
+import * as portfolioStorage from '../services/portfolioStorage';
 import BrokerLogo from './BrokerLogo';
 import CompanyLogo from './CompanyLogo';
 
-function formatINR(val) {
+function formatINR(val, options = {}) {
   if (val === undefined || val === null || isNaN(Number(val))) return '₹0.00';
   return `₹${Number(val).toLocaleString('en-IN', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
+    maximumFractionDigits: options.maximumFractionDigits ?? 2,
+    minimumFractionDigits: options.minimumFractionDigits ?? 2,
   })}`;
 }
 
@@ -21,6 +37,9 @@ export default function AddInvestmentModal({
   isEditMode = false,
 }) {
   const { getToken } = useAuth();
+  const { user } = useUser();
+
+  const todayStr = new Date().toISOString().split('T')[0];
 
   const [formData, setFormData] = useState({
     companyName: '',
@@ -28,25 +47,28 @@ export default function AddInvestmentModal({
     brokerName: 'Groww',
     quantity: '',
     purchasePrice: '',
-    purchaseDate: new Date().toISOString().split('T')[0],
+    transactionCharges: '',
+    purchaseDate: todayStr,
     exchange: 'NSE',
     notes: '',
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
   useEffect(() => {
     if (initialData) {
       setFormData({
         companyName: initialData.companyName || '',
-        stockSymbol: initialData.stockSymbol || '',
-        brokerName: initialData.brokerName || 'Groww',
+        stockSymbol: initialData.stockSymbol || initialData.symbol || '',
+        brokerName: initialData.brokerName || initialData.broker || 'Groww',
         quantity: initialData.quantity !== undefined ? String(initialData.quantity) : '',
         purchasePrice: initialData.purchasePrice !== undefined ? String(initialData.purchasePrice) : '',
+        transactionCharges: initialData.transactionCharges !== undefined ? String(initialData.transactionCharges) : '',
         purchaseDate: initialData.purchaseDate
           ? new Date(initialData.purchaseDate).toISOString().split('T')[0]
-          : new Date().toISOString().split('T')[0],
+          : todayStr,
         exchange: initialData.exchange || 'NSE',
         notes: initialData.notes || '',
       });
@@ -57,19 +79,26 @@ export default function AddInvestmentModal({
         brokerName: 'Groww',
         quantity: '',
         purchasePrice: '',
-        purchaseDate: new Date().toISOString().split('T')[0],
+        transactionCharges: '',
+        purchaseDate: todayStr,
         exchange: 'NSE',
         notes: '',
       });
     }
     setError(null);
-  }, [initialData, isOpen]);
+    setSuccessMsg(null);
+  }, [initialData, isOpen, todayStr]);
 
   if (!isOpen) return null;
 
-  const numQuantity = Number(formData.quantity) || 0;
-  const numPrice = Number(formData.purchasePrice) || 0;
-  const calculatedTotal = numQuantity * numPrice;
+  // Real-time calculations
+  const parsedQty = Number(formData.quantity);
+  const isWholeShare = Number.isInteger(parsedQty) && parsedQty > 0;
+  const numQuantity = isWholeShare ? parsedQty : 0;
+  const numPrice = Math.max(0, Number(formData.purchasePrice) || 0);
+  const numCharges = Math.max(0, Number(formData.transactionCharges) || 0);
+  const purchaseValue = numQuantity * numPrice;
+  const totalCost = purchaseValue + numCharges;
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -79,7 +108,9 @@ export default function AddInvestmentModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setSuccessMsg(null);
 
+    // Validation Rules
     if (!formData.companyName.trim()) {
       setError('Company name is required.');
       return;
@@ -88,47 +119,80 @@ export default function AddInvestmentModal({
       setError('Stock symbol is required.');
       return;
     }
-    if (numQuantity <= 0) {
-      setError('Quantity must be greater than 0.');
+    if (!formData.brokerName) {
+      setError('Please select a broker.');
       return;
     }
-    if (numPrice < 0) {
-      setError('Purchase price cannot be negative.');
+    if (!parsedQty || parsedQty <= 0 || !Number.isInteger(parsedQty)) {
+      setError('Number of shares must be a positive whole number (e.g. 1, 5, 10).');
+      return;
+    }
+    if (!formData.purchasePrice || numPrice <= 0) {
+      setError('Purchase price per share must be greater than ₹0.00.');
+      return;
+    }
+    if (formData.purchaseDate > todayStr) {
+      setError('Purchase date cannot be in the future.');
+      return;
+    }
+    if (formData.transactionCharges && Number(formData.transactionCharges) < 0) {
+      setError('Transaction charges cannot be negative.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const token = await getToken();
-
       const payload = {
         companyName: formData.companyName.trim(),
+        symbol: formData.stockSymbol.trim().toUpperCase(),
         stockSymbol: formData.stockSymbol.trim().toUpperCase(),
+        broker: formData.brokerName,
         brokerName: formData.brokerName,
-        quantity: numQuantity,
+        quantity: parsedQty,
         purchasePrice: numPrice,
+        transactionCharges: numCharges,
+        purchaseValue,
+        totalCost,
+        totalInvestment: totalCost,
         purchaseDate: formData.purchaseDate,
         exchange: formData.exchange,
         notes: formData.notes.trim(),
+        transactionType: 'BUY',
       };
 
-      let response;
-      if (isEditMode && initialData?._id) {
-        response = await updateInvestment(initialData._id, payload, token);
+      // 1. Save in user-isolated client storage
+      let savedRecord;
+      const targetId = initialData?.id || initialData?._id;
+      if (isEditMode && targetId) {
+        savedRecord = portfolioStorage.updateInvestment(user?.id, targetId, payload);
       } else {
-        response = await addInvestment(payload, token);
+        savedRecord = portfolioStorage.addInvestment(user?.id, payload);
       }
 
-      if (response?.success) {
-        if (onSuccess) onSuccess(response.data);
-        onClose();
-      } else {
-        setError(response?.error || 'Failed to save investment.');
+      // 2. Sync with backend API if user is authenticated (graceful fallback)
+      try {
+        const token = await getToken();
+        if (token) {
+          if (isEditMode && targetId) {
+            await apiUpdateInvestment(targetId, payload, token);
+          } else {
+            await apiAddInvestment(payload, token);
+          }
+        }
+      } catch (backendErr) {
+        console.warn('[AddInvestmentModal] Backend sync notice:', backendErr.message || backendErr);
       }
+
+      setSuccessMsg(isEditMode ? 'Investment updated successfully!' : 'Investment recorded successfully in your portfolio!');
+
+      setTimeout(() => {
+        if (onSuccess) onSuccess(savedRecord);
+        onClose();
+      }, 500);
     } catch (err) {
       console.error('[AddInvestmentModal] Submit failed:', err);
-      setError(err.response?.data?.error || 'Failed to save investment. Please check server connection.');
+      setError('An error occurred while saving the investment. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -136,21 +200,21 @@ export default function AddInvestmentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-100 my-8">
+      <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-100 my-8">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
               <Layers className="h-5 w-5" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">
-                {isEditMode ? 'Edit Investment Record' : 'Record New Investment'}
+                {isEditMode ? 'Edit Investment Record' : 'Record Investment'}
               </h2>
               <p className="text-xs text-slate-500">
                 {isEditMode
-                  ? 'Update holding quantity, price or broker details'
-                  : 'Add completed broker purchase to your portfolio'}
+                  ? 'Update transaction quantity, price, charges or broker details'
+                  : 'Manually add your confirmed broker trade to InvestIQ portfolio'}
               </p>
             </div>
           </div>
@@ -158,6 +222,7 @@ export default function AddInvestmentModal({
             type="button"
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+            aria-label="Close modal"
           >
             <X className="h-5 w-5" />
           </button>
@@ -165,9 +230,17 @@ export default function AddInvestmentModal({
 
         {/* Error notification */}
         {error && (
-          <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200">
+          <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl bg-rose-50 p-3.5 text-xs font-semibold text-rose-700 border border-rose-200">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Success notification */}
+        {successMsg && (
+          <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span>{successMsg}</span>
           </div>
         )}
 
@@ -217,6 +290,7 @@ export default function AddInvestmentModal({
                   name="brokerName"
                   value={formData.brokerName}
                   onChange={handleChange}
+                  required
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition appearance-none"
                 >
                   <option value="Groww">Groww</option>
@@ -251,19 +325,20 @@ export default function AddInvestmentModal({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Number of Shares *
+                Number of Shares (Whole Shares) *
               </label>
               <input
                 type="number"
                 name="quantity"
-                step="any"
-                min="0.0001"
+                step="1"
+                min="1"
                 value={formData.quantity}
                 onChange={handleChange}
                 placeholder="e.g. 10"
                 required
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition"
               />
+              <span className="text-[11px] text-slate-400 mt-1 block">Positive whole shares only</span>
             </div>
 
             <div>
@@ -273,63 +348,90 @@ export default function AddInvestmentModal({
               <input
                 type="number"
                 name="purchasePrice"
-                step="any"
-                min="0"
+                step="0.05"
+                min="0.01"
                 value={formData.purchasePrice}
                 onChange={handleChange}
-                placeholder="e.g. 2950.00"
+                placeholder="e.g. 2500.00"
                 required
                 className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition"
               />
             </div>
           </div>
 
-          {/* Purchase Date */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Purchase Date *
-            </label>
-            <input
-              type="date"
-              name="purchaseDate"
-              value={formData.purchaseDate}
-              onChange={handleChange}
-              required
-              className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition"
-            />
+          {/* Purchase Date & Transaction Charges */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                Purchase Date *
+              </label>
+              <input
+                type="date"
+                name="purchaseDate"
+                max={todayStr}
+                value={formData.purchaseDate}
+                onChange={handleChange}
+                required
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium text-slate-900 bg-white focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                Transaction Charges (₹, Optional)
+              </label>
+              <input
+                type="number"
+                name="transactionCharges"
+                step="0.01"
+                min="0"
+                value={formData.transactionCharges}
+                onChange={handleChange}
+                placeholder="e.g. 20.00"
+                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition"
+              />
+            </div>
           </div>
 
           {/* Optional Notes */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-              Notes (Optional)
+              Investment Notes (Optional)
             </label>
             <textarea
               name="notes"
               rows={2}
               value={formData.notes}
               onChange={handleChange}
-              placeholder="e.g. Long term SIP, buy on dip"
+              placeholder="e.g. Core long-term holding, bought after quarterly results"
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 focus:outline-hidden transition resize-none"
             />
           </div>
 
-          {/* Dynamic Total Investment calculation display */}
-          <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4">
+          {/* Dynamic Investment Cost Calculation Display */}
+          <div className="rounded-2xl bg-slate-50 border border-slate-200/90 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Total Investment Calculation:</span>
-              <span>{numQuantity || 0} shares × {formatINR(numPrice || 0)}</span>
+              <span>Purchase Value:</span>
+              <span className="font-semibold text-slate-700">
+                {numQuantity} shares × {formatINR(numPrice)} = {formatINR(purchaseValue)}
+              </span>
             </div>
-            <div className="mt-1 flex items-baseline justify-between">
-              <span className="text-sm font-semibold text-slate-700">Total Invested Amount:</span>
+            {numCharges > 0 && (
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>Transaction Charges:</span>
+                <span className="font-semibold text-slate-700">+{formatINR(numCharges)}</span>
+              </div>
+            )}
+            <div className="border-t border-slate-200 pt-2 flex items-baseline justify-between">
+              <span className="text-sm font-bold text-slate-900">Total Cost (Investment):</span>
               <span className="text-xl font-extrabold text-[#0B3D2C]">
-                {formatINR(calculatedTotal)}
+                {formatINR(totalCost)}
               </span>
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex items-center justify-end gap-3 pt-3">
             <button
               type="button"
               onClick={onClose}
@@ -351,7 +453,7 @@ export default function AddInvestmentModal({
               ) : (
                 <>
                   <Check className="h-4 w-4" />
-                  {isEditMode ? 'Update Record' : 'Save Investment'}
+                  {isEditMode ? 'Save Changes' : 'Save Investment'}
                 </>
               )}
             </button>

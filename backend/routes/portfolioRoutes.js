@@ -529,4 +529,67 @@ router.post('/brokers/sync', async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────
+// @route   GET /api/portfolio/synced-holdings
+// @desc    Retrieve all broker-synchronized holdings for user
+// ──────────────────────────────────────────────────────────
+router.get('/synced-holdings', async (req, res) => {
+  try {
+    const broker = req.query.broker ? req.query.broker.toLowerCase() : null;
+    const holdings = await portfolioStore.getSyncedHoldings(req.userId, broker);
+    return res.status(200).json({
+      success: true,
+      count: holdings.length,
+      data: holdings,
+    });
+  } catch (err) {
+    console.error('[Portfolio] Error fetching synced holdings:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve synced holdings.',
+    });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
+// @route   GET /api/portfolio/unified
+// @desc    Retrieve unified deduplicated portfolio (Manual + Broker Synced)
+// ──────────────────────────────────────────────────────────
+router.get('/unified', async (req, res) => {
+  try {
+    const result = await portfolioStore.getUnifiedPortfolio(req.userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    console.error('[Portfolio] Error generating unified portfolio:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to generate unified portfolio.',
+    });
+  }
+});
+
+// ──────────────────────────────────────────────────────────
+// @route   GET /api/portfolio/reconciliation
+// @desc    Retrieve reconciliation records and duplicate review summary
+// ──────────────────────────────────────────────────────────
+router.get('/reconciliation', async (req, res) => {
+  try {
+    const result = await portfolioStore.getUnifiedPortfolio(req.userId);
+    return res.status(200).json({
+      success: true,
+      records: result.reconciliationRecords,
+      summary: result.summary,
+    });
+  } catch (err) {
+    console.error('[Portfolio] Error fetching reconciliation records:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch reconciliation records.',
+    });
+  }
+});
+
 module.exports = router;

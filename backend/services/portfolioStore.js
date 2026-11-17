@@ -9,6 +9,10 @@ const path = require('path');
 const mongoose = require('mongoose');
 const Investment = require('../models/Investment');
 const BrokerSync = require('../models/BrokerSync');
+const BrokerConnection = require('../models/BrokerConnection');
+const SyncedHolding = require('../models/SyncedHolding');
+const ReconciliationRecord = require('../models/ReconciliationRecord');
+const { reconcilePortfolio } = require('./brokers/reconciliationService');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const LOCAL_STORE_FILE = path.join(DATA_DIR, 'investments_data.json');
@@ -21,13 +25,32 @@ if (!fs.existsSync(DATA_DIR)) {
 function readLocalStore() {
   try {
     if (!fs.existsSync(LOCAL_STORE_FILE)) {
-      return { investments: [], brokerSyncs: [] };
+      return {
+        investments: [],
+        brokerSyncs: [],
+        brokerConnections: [],
+        syncedHoldings: [],
+        reconciliationRecords: [],
+      };
     }
     const raw = fs.readFileSync(LOCAL_STORE_FILE, 'utf8');
-    return JSON.parse(raw) || { investments: [], brokerSyncs: [] };
+    const parsed = JSON.parse(raw) || {};
+    return {
+      investments: parsed.investments || [],
+      brokerSyncs: parsed.brokerSyncs || [],
+      brokerConnections: parsed.brokerConnections || [],
+      syncedHoldings: parsed.syncedHoldings || [],
+      reconciliationRecords: parsed.reconciliationRecords || [],
+    };
   } catch (err) {
     console.warn('[PortfolioStore] Error reading local store:', err.message);
-    return { investments: [], brokerSyncs: [] };
+    return {
+      investments: [],
+      brokerSyncs: [],
+      brokerConnections: [],
+      syncedHoldings: [],
+      reconciliationRecords: [],
+    };
   }
 }
 
@@ -262,6 +285,210 @@ async function updateBrokerSync(userId, brokerId, syncData) {
   return updatedEntry;
 }
 
+// ── Phase 4 Broker Connections & Synced Holdings Operations ──
+
+async function getBrokerConnections(userId) {
+  if (isMongoConnected()) {
+    const list = await BrokerConnection.find({ userId });
+    return list.map((doc) => (doc.toSafeObject ? doc.toSafeObject() : doc));
+  }
+
+  const store = readLocalStore();
+  return (store.brokerConnections || [])
+    .filter((c) => c.userId === userId)
+    .map((c) => {
+      const safe = { ...c };
+      delete safe.encryptedAccessToken;
+      delete safe.encryptedRefreshToken;
+      return safe;
+    });
+}
+
+async function getBrokerConnection(userId, brokerId) {
+  if (isMongoConnected()) {
+    return BrokerConnection.findOne({ userId, broker: brokerId });
+  }
+
+  const store = readLocalStore();
+  return (store.brokerConnections || []).find((c) => c.userId === userId && c.broker === brokerId) || null;
+}
+
+async function saveBrokerConnection(userId, connectionData) {
+  const broker = connectionData.broker;
+  const payload = {
+    userId,
+    broker,
+    brokerDisplayName: connectionData.brokerDisplayName || broker,
+    externalAccountId: connectionData.externalAccountId || null,
+    accountMaskedId: connectionData.accountMaskedId || null,
+    connectionStatus: connectionData.connectionStatus || 'connected',
+    encryptedAccessToken: connectionData.encryptedAccessToken || null,
+    encryptedRefreshToken: connectionData.encryptedRefreshToken || null,
+    tokenExpiresAt: connectionData.tokenExpiresAt || null,
+    lastSuccessfulSyncAt: connectionData.lastSuccessfulSyncAt || null,
+    lastAttemptedSyncAt: connectionData.lastAttemptedSyncAt || new Date(),
+    lastErrorMessage: connectionData.lastErrorMessage || null,
+    scope: connectionData.scope || ['read:holdings', 'read:profile'],
+    consentGiven: true,
+    meta: connectionData.meta || {},
+  };
+
+  if (isMongoConnected()) {
+    const doc = await BrokerConnection.findOneAndUpdate(
+      { userId, broker },
+      { $set: payload },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    return doc.toSafeObject ? doc.toSafeObject() : doc;
+  }
+
+  const store = readLocalStore();
+  if (!store.brokerConnections) store.brokerConnections = [];
+
+  const idx = store.brokerConnections.findIndex((c) => c.userId === userId && c.broker === brokerId);
+  const newEntry = {
+    _id: idx >= 0 ? store.brokerConnections[idx]._id : `conn_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    ...payload,
+    createdAt: idx >= 0 ? store.brokerConnections[idx].createdAt : new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (idx >= 0) {
+    store.brokerConnections[idx] = newEntry;
+  } else {
+    store.brokerConnections.push(newEntry);
+  }
+  writeLocalStore(store);
+
+  const safe = { ...newEntry };
+  delete safe.encryptedAccessToken;
+  delete safe.encryptedRefreshToken;
+  return safe;
+}
+
+async function updateBrokerConnection(userId, brokerId, updateData) {
+  if (isMongoConnected()) {
+    const doc = await BrokerConnection.findOneAndUpdate(
+      { userId, broker: brokerId },
+      { $set: { ...updateData, updatedAt: new Date() } },
+      { new: true }
+    );
+    return doc ? (doc.toSafeObject ? doc.toSafeObject() : doc) : null;
+  }
+
+  const store = readLocalStore();
+  if (!store.brokerConnections) store.brokerConnections = [];
+
+  const idx = store.brokerConnections.findIndex((c) => c.userId === userId && c.broker === brokerId);
+  if (idx === -1) return null;
+
+  store.brokerConnections[idx] = {
+    ...store.brokerConnections[idx],
+    ...updateData,
+    updatedAt: new Date().toISOString(),
+  };
+  writeLocalStore(store);
+
+  const safe = { ...store.brokerConnections[idx] };
+  delete safe.encryptedAccessToken;
+  delete safe.encryptedRefreshToken;
+  return safe;
+}
+
+async function deleteBrokerConnection(userId, brokerId) {
+  if (isMongoConnected()) {
+    await BrokerConnection.findOneAndDelete({ userId, broker: brokerId });
+    await SyncedHolding.deleteMany({ userId, broker: brokerId });
+    return true;
+  }
+
+  const store = readLocalStore();
+  store.brokerConnections = (store.brokerConnections || []).filter(
+    (c) => !(c.userId === userId && c.broker === brokerId)
+  );
+  store.syncedHoldings = (store.syncedHoldings || []).filter(
+    (h) => !(h.userId === userId && h.broker === brokerId)
+  );
+  writeLocalStore(store);
+  return true;
+}
+
+async function getSyncedHoldings(userId, brokerId = null) {
+  if (isMongoConnected()) {
+    const filter = { userId };
+    if (brokerId) filter.broker = brokerId;
+    return SyncedHolding.find(filter).sort({ symbol: 1 });
+  }
+
+  const store = readLocalStore();
+  return (store.syncedHoldings || []).filter((h) => {
+    if (h.userId !== userId) return false;
+    if (brokerId && h.broker !== brokerId) return false;
+    return true;
+  });
+}
+
+async function saveSyncedHoldings(userId, brokerId, holdingsList) {
+  const connection = await getBrokerConnection(userId, brokerId);
+  const connId = connection ? (connection._id || connection.id) : `conn_${brokerId}`;
+
+  const preparedHoldings = holdingsList.map((item) => ({
+    userId,
+    brokerConnectionId: String(connId),
+    broker: brokerId,
+    instrumentId: item.instrumentId || item.symbol,
+    isin: item.isin || null,
+    exchange: item.exchange || 'NSE',
+    symbol: String(item.symbol).toUpperCase().trim(),
+    companyName: item.companyName,
+    quantity: item.quantity,
+    averagePrice: item.averagePrice,
+    costBasis: item.costBasis || Number((item.quantity * item.averagePrice).toFixed(2)),
+    currentPrice: item.currentPrice,
+    marketValue: item.marketValue,
+    unrealizedPnl: item.unrealizedPnl,
+    unrealizedPnlPercent: item.unrealizedPnlPercent,
+    currency: item.currency || 'INR',
+    snapshotTimestamp: new Date(),
+    source: 'broker_sync',
+  }));
+
+  if (isMongoConnected()) {
+    // Delete previously synced snapshot for this broker and replace with fresh snapshot
+    await SyncedHolding.deleteMany({ userId, broker: brokerId });
+    if (preparedHoldings.length > 0) {
+      await SyncedHolding.insertMany(preparedHoldings);
+    }
+    return preparedHoldings;
+  }
+
+  const store = readLocalStore();
+  if (!store.syncedHoldings) store.syncedHoldings = [];
+
+  // Remove existing holdings for this user and broker
+  store.syncedHoldings = store.syncedHoldings.filter(
+    (h) => !(h.userId === userId && h.broker === brokerId)
+  );
+
+  const formatted = preparedHoldings.map((h) => ({
+    _id: `synced_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    ...h,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+
+  store.syncedHoldings.push(...formatted);
+  writeLocalStore(store);
+  return formatted;
+}
+
+async function getUnifiedPortfolio(userId) {
+  const manual = await getInvestmentsByUser(userId);
+  const synced = await getSyncedHoldings(userId);
+
+  return reconcilePortfolio(manual, synced);
+}
+
 module.exports = {
   getInvestmentsByUser,
   getInvestmentById,
@@ -270,5 +497,13 @@ module.exports = {
   deleteInvestment,
   getBrokerSyncStatuses,
   updateBrokerSync,
+  getBrokerConnections,
+  getBrokerConnection,
+  saveBrokerConnection,
+  updateBrokerConnection,
+  deleteBrokerConnection,
+  getSyncedHoldings,
+  saveSyncedHoldings,
+  getUnifiedPortfolio,
   SUPPORTED_BROKERS,
 };

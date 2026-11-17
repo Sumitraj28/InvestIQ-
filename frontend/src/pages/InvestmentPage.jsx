@@ -248,10 +248,11 @@ export default function InvestmentPage() {
               <button
                 type="button"
                 onClick={() => setIsRecordModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 px-4 py-2.5 text-xs font-bold text-white shadow-xs transition"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B3D2C] hover:bg-[#145A3E] px-4 py-2.5 text-xs font-bold text-white shadow-xs hover:shadow-md transition"
+                title="Manually record investment in portfolio"
               >
                 <PlusCircle className="h-4 w-4" />
-                Record Manual Entry
+                Add to My Portfolio
               </button>
             </div>
           </div>
@@ -283,43 +284,40 @@ export default function InvestmentPage() {
 
         {/* Post-Redirection Prompt Banner (Visible after user clicks a broker) */}
         {redirectedBroker && (
-          <div className="mb-8 rounded-2xl bg-gradient-to-r from-emerald-900 to-[#0B3D2C] p-6 text-white shadow-lg animate-in fade-in duration-300">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
+          <div className="mb-8 rounded-3xl bg-gradient-to-r from-emerald-950 via-[#0B3D2C] to-[#145A3E] p-6 sm:p-7 text-white shadow-xl animate-in fade-in duration-300 border border-emerald-700/40">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
+              <div className="flex items-center gap-3.5">
                 <BrokerLogo broker={redirectedBroker.name} size="md" />
                 <div>
-                  <h3 className="font-bold text-base sm:text-lg">
-                    Opened {redirectedBroker.name} in a new tab!
+                  <h3 className="font-bold text-base sm:text-lg text-white">
+                    Opened {redirectedBroker.displayName} in a new tab!
                   </h3>
-                  <p className="text-xs sm:text-sm text-emerald-100">
-                    Complete your trade on {redirectedBroker.name}. Once confirmed, click below to record the investment in your InvestIQ Portfolio.
+                  <p className="text-xs sm:text-sm text-emerald-100 max-w-xl">
+                    Complete your trade securely on {redirectedBroker.displayName}'s platform. Once confirmed, record your purchase details here to track them in your portfolio.
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsRecordModalOpen(true)}
-                className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 px-5 py-2.5 text-xs font-extrabold shadow-md hover:scale-105 transition"
-              >
-                <PlusCircle className="h-4 w-4 text-emerald-700" />
-                Record Investment in Portfolio →
-              </button>
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsRecordModalOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white text-[#0B3D2C] hover:bg-emerald-50 px-5 py-2.5 text-xs font-black shadow-md hover:scale-105 transition"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+                  I've Completed My Investment
+                </button>
+              </div>
             </div>
           </div>
         )}
 
         {/* Broker Selection Section */}
         <div className="mb-6">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 text-xs font-black">
-              2
-            </span>
-            <h2 className="text-2xl font-extrabold tracking-tight text-slate-900">
-              Where would you like to invest?
-            </h2>
-          </div>
-          <p className="mt-1 text-sm text-slate-500">
-            Select your preferred stockbroker to invest in <span className="font-bold text-slate-800">{selectedStock.name}</span>. We will route you directly to the verified stock order page.
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+            Where would you like to invest?
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Choose your preferred broker to invest in <span className="font-extrabold text-slate-900">{selectedStock.name}</span>.
           </p>
         </div>
 

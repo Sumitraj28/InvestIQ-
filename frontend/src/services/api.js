@@ -88,4 +88,47 @@ export const syncBrokerHoldings = async (broker, consent, token) => {
   return response.data;
 };
 
+// ── Phase 4 Broker Connection & Sync Endpoints ──
+
+export const getBrokersCatalog = async () => {
+  const response = await api.get('/brokers');
+  return response.data;
+};
+
+export const getBrokerConnections = async (token) => {
+  const response = await api.get('/brokers/connections', createAuthHeaders(token));
+  return response.data;
+};
+
+export const initiateBrokerConnect = async (brokerId, token) => {
+  const response = await api.post(`/brokers/${brokerId}/connect`, {}, createAuthHeaders(token));
+  return response.data;
+};
+
+export const triggerBrokerSync = async (brokerId, token) => {
+  const response = await api.post(`/brokers/connections/${brokerId}/sync`, {}, createAuthHeaders(token));
+  return response.data;
+};
+
+export const disconnectBrokerAccount = async (brokerId, token) => {
+  const response = await api.delete(`/brokers/connections/${brokerId}`, createAuthHeaders(token));
+  return response.data;
+};
+
+export const getSyncedHoldings = async (token, brokerId = null) => {
+  const url = brokerId ? `/portfolio/synced-holdings?broker=${brokerId}` : '/portfolio/synced-holdings';
+  const response = await api.get(url, createAuthHeaders(token));
+  return response.data;
+};
+
+export const getUnifiedPortfolio = async (token) => {
+  const response = await api.get('/portfolio/unified', createAuthHeaders(token));
+  return response.data;
+};
+
+export const getReconciliationRecords = async (token) => {
+  const response = await api.get('/portfolio/reconciliation', createAuthHeaders(token));
+  return response.data;
+};
+
 export default api;

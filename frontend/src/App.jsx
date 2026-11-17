@@ -6,9 +6,10 @@ import CompanyPage from './pages/CompanyPage';
 import Watchlist from './pages/Watchlist';
 import InvestmentPage from './pages/InvestmentPage';
 import PortfolioPage from './pages/PortfolioPage';
+import ConnectedBrokersPage from './pages/ConnectedBrokersPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Show, SignInButton, SignUpButton, UserButton, useAuth } from '@clerk/react';
-import { BarChart3, Bell, Menu, LayoutDashboard, Wallet, TrendingUp, X } from 'lucide-react';
+import { BarChart3, Bell, Menu, LayoutDashboard, Wallet, TrendingUp, ShieldCheck, X } from 'lucide-react';
 
 function AppHeader() {
   const { isSignedIn } = useAuth();
@@ -54,6 +55,13 @@ function AppHeader() {
             >
               <Wallet className="h-4 w-4" />
               Portfolio
+            </Link>
+            <Link
+              to="/connected-brokers"
+              className={`flex items-center gap-1.5 transition ${location.pathname === '/connected-brokers' || location.pathname === '/brokers' ? 'text-emerald-700 font-bold' : 'hover:text-emerald-600'}`}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Connected Brokers
             </Link>
             <Link
               to="/invest"
@@ -130,6 +138,14 @@ function AppHeader() {
               Portfolio Dashboard
             </Link>
             <Link
+              to="/connected-brokers"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2.5 py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Connected Brokers (Auto-Sync)
+            </Link>
+            <Link
               to="/invest"
               onClick={() => setMobileMenuOpen(false)}
               className="flex items-center gap-2.5 py-2 text-sm font-bold text-slate-800 hover:text-emerald-600"
@@ -201,6 +217,22 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <PortfolioPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/connected-brokers"
+              element={
+                <ProtectedRoute>
+                  <ConnectedBrokersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/brokers"
+              element={
+                <ProtectedRoute>
+                  <ConnectedBrokersPage />
                 </ProtectedRoute>
               }
             />
