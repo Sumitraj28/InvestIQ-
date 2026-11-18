@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, SearchX } from 'lucide-react';
 import { getStock, getStockAiSummary, getStockHistory } from '../services/api';
@@ -25,91 +25,91 @@ export default function CompanyPage() {
   const [error, setError] = useState(null);
   const [historyError, setHistoryError] = useState(null);
 
+  const fetchSummary = useCallback(async (isMounted = { current: true }) => {
+    setSummaryLoading(true);
+    setError(null);
+    setStock(null);
+    setAiSummary(null);
+    setAiError(null);
+
+    try {
+      const response = await getStock(routeTicker);
+      if (!isMounted.current) return;
+
+      if (response?.success && response.data) {
+        setStock(response.data);
+        if (Array.isArray(response.data.history5y)) {
+          setHistory(response.data.history5y);
+        }
+      } else {
+        setError({ status: 404, message: 'No stock data found for this ticker.' });
+      }
+    } catch (err) {
+      if (!isMounted.current) return;
+      setError({
+        status: err.response?.status || 500,
+        message: err.response?.data?.error || 'Unable to load stock data.',
+      });
+    } finally {
+      if (isMounted.current) setSummaryLoading(false);
+    }
+  }, [routeTicker]);
+
+  const fetchHistory = useCallback(async (isMounted = { current: true }) => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+
+    try {
+      const response = await getStockHistory(routeTicker);
+      if (!isMounted.current) return;
+
+      if (response?.success && Array.isArray(response.history5y)) {
+        setHistory(response.history5y);
+      } else {
+        setHistoryError('Historical prices are unavailable for this ticker.');
+      }
+    } catch (err) {
+      if (!isMounted.current) return;
+      setHistoryError(err.response?.data?.error || 'Unable to load historical prices.');
+    } finally {
+      if (isMounted.current) setHistoryLoading(false);
+    }
+  }, [routeTicker]);
+
+  const fetchAiSummary = useCallback(async (isMounted = { current: true }) => {
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const response = await getStockAiSummary(routeTicker);
+      if (!isMounted.current) return;
+
+      if (response?.success && response.aiSummary) {
+        setAiSummary(response.aiSummary);
+      } else {
+        setAiError('AI company brief is unavailable for this ticker.');
+      }
+    } catch (err) {
+      if (!isMounted.current) return;
+      setAiError(err.response?.data?.error || 'Unable to generate AI company brief.');
+    } finally {
+      if (isMounted.current) setAiLoading(false);
+    }
+  }, [routeTicker]);
+
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchSummary = async () => {
-      setSummaryLoading(true);
-      setError(null);
-      setStock(null);
-      setAiSummary(null);
-      setAiError(null);
-
-      try {
-        const response = await getStock(routeTicker);
-        if (!isMounted) return;
-
-        if (response?.success && response.data) {
-          setStock(response.data);
-          if (Array.isArray(response.data.history5y)) {
-            setHistory(response.data.history5y);
-          }
-        } else {
-          setError({ status: 404, message: 'No stock data found for this ticker.' });
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        setError({
-          status: err.response?.status || 500,
-          message: err.response?.data?.error || 'Unable to load stock data.',
-        });
-      } finally {
-        if (isMounted) setSummaryLoading(false);
-      }
-    };
-
-    const fetchHistory = async () => {
-      setHistoryLoading(true);
-      setHistoryError(null);
-
-      try {
-        const response = await getStockHistory(routeTicker);
-        if (!isMounted) return;
-
-        if (response?.success && Array.isArray(response.history5y)) {
-          setHistory(response.history5y);
-        } else {
-          setHistoryError('Historical prices are unavailable for this ticker.');
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        setHistoryError(err.response?.data?.error || 'Unable to load historical prices.');
-      } finally {
-        if (isMounted) setHistoryLoading(false);
-      }
-    };
-
-    const fetchAiSummary = async () => {
-      setAiLoading(true);
-      setAiError(null);
-
-      try {
-        const response = await getStockAiSummary(routeTicker);
-        if (!isMounted) return;
-
-        if (response?.success && response.aiSummary) {
-          setAiSummary(response.aiSummary);
-        } else {
-          setAiError('AI company brief is unavailable for this ticker.');
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        setAiError(err.response?.data?.error || 'Unable to generate AI company brief.');
-      } finally {
-        if (isMounted) setAiLoading(false);
-      }
-    };
+    const isMounted = { current: true };
 
     if (routeTicker) {
-      fetchSummary();
-      fetchHistory();
-      fetchAiSummary();
+      fetchSummary(isMounted);
+      fetchHistory(isMounted);
+      fetchAiSummary(isMounted);
     }
 
     return () => {
-      isMounted = false;
+      isMounted.current = false;
     };
-  }, [routeTicker]);
+  }, [routeTicker, fetchSummary, fetchHistory, fetchAiSummary]);
 
   const isNotFound = error?.status === 404;
 
