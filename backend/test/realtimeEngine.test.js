@@ -224,16 +224,42 @@ async function runSuite() {
   // ──────────────────────────────────────────────────────────
   console.log('\n[3] Testing Real-Time Market Data Engine & Symbol Normalization');
 
-  await runAsyncTest('Normalizes symbols and returns complete quotes', async () => {
+  await runAsyncTest('Normalizes symbols and returns clear unavailable state when provider offline (no fake prices)', async () => {
     const quote = await marketDataEngine.getQuote('RELIANCE.NS');
     assert.strictEqual(quote.symbol, 'RELIANCE');
-    assert.ok(quote.lastPrice > 0, 'LTP must be positive');
-    assert.ok(typeof quote.dayChange === 'number');
-    assert.ok(typeof quote.dayChangePercent === 'number');
-    assert.ok(quote.open > 0);
-    assert.ok(quote.dayHigh >= quote.dayLow);
-    assert.ok(quote.quoteTimestamp);
-    assert.ok(['LIVE', 'DELAYED', 'MARKET_CLOSED', 'OFFLINE_SNAPSHOT'].includes(quote.dataFreshness));
+    assert.strictEqual(quote.exchange, 'NSE');
+    assert.ok(quote.instrumentKey.includes('RELIANCE') || quote.instrumentKey.includes('INE002A01018'));
+    assert.strictEqual(quote.lastPrice, null, 'Offline quote must not fabricate numbers');
+    assert.strictEqual(quote.dataFreshness, 'UNAVAILABLE');
+    assert.strictEqual(quote.dataStatus, 'unavailable');
+  });
+
+  runTest('Accurately ingests verified broker ticks with exact price change and percentage formulas', () => {
+    const verifiedTick = {
+      symbol: 'RELIANCE',
+      lastPrice: 2985.40,
+      previousClose: 2947.20,
+      open: 2950.00,
+      high: 2994.80,
+      low: 2942.00,
+      volume: 4820000,
+      source: 'broker-stream',
+      provider: 'upstox',
+    };
+
+    const ingested = marketDataEngine.ingestTick(verifiedTick);
+    assert.strictEqual(ingested.symbol, 'RELIANCE');
+    assert.strictEqual(ingested.lastPrice, 2985.40);
+    assert.strictEqual(ingested.previousClose, 2947.20);
+
+    // Price Change = 2985.40 - 2947.20 = 38.20
+    assert.strictEqual(ingested.change, 38.20);
+    assert.strictEqual(ingested.dayChange, 38.20);
+
+    // Percentage Change = (38.20 / 2947.20) * 100 = 1.30%
+    const expectedPct = Number(((38.20 / 2947.20) * 100).toFixed(2));
+    assert.strictEqual(ingested.dayChangePercent, expectedPct);
+    assert.strictEqual(ingested.dataFreshness, 'LIVE');
   });
 
   await runAsyncTest('Batch getQuotes returns structured dictionary of quotes', async () => {
@@ -249,6 +275,22 @@ async function runSuite() {
     const cached = marketDataEngine.getCachedQuote('RELIANCE');
     assert.ok(cached !== null);
     assert.strictEqual(cached.symbol, 'RELIANCE');
+    assert.strictEqual(cached.lastPrice, 2985.40);
+  });
+
+  await runAsyncTest('getIndexQuotes returns structured benchmarks for NIFTY 50, SENSEX, and BANK NIFTY', async () => {
+    const indices = await marketDataEngine.getIndexQuotes();
+    assert.strictEqual(indices.length, 3);
+    const names = indices.map((i) => i.name);
+    assert.ok(names.includes('NIFTY 50'));
+    assert.ok(names.includes('SENSEX'));
+    assert.ok(names.includes('BANK NIFTY'));
+
+    for (const idx of indices) {
+      assert.ok(idx.symbol.startsWith('^'));
+      assert.ok(idx.instrumentKey);
+      assert.ok(['LIVE', 'DELAYED', 'STALE', 'UNAVAILABLE'].includes(idx.dataFreshness));
+    }
   });
 
   // ──────────────────────────────────────────────────────────

@@ -147,13 +147,14 @@ function FundamentalRow({ label, value }) {
 }
 
 function ShareholdingRow({ label, value, color }) {
+  const num = Number(value || 0);
   return (
     <div className="grid grid-cols-[80px_minmax(0,1fr)_64px] items-center gap-4">
       <span className="text-sm font-medium text-slate-600">{label}</span>
       <div className="h-1.5 rounded-full bg-slate-100">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, num))}%` }} />
       </div>
-      <span className="text-right text-sm font-bold text-slate-700">{value.toFixed(2)}%</span>
+      <span className="text-right text-sm font-bold text-slate-700">{num.toFixed(2)}%</span>
     </div>
   );
 }
@@ -178,6 +179,7 @@ export default function StockDetailDashboard({
   aiSummary,
   aiLoading = false,
   aiError = null,
+  onRefreshAiSummary,
 }) {
   const navigate = useNavigate();
   const [selectedRange, setSelectedRange] = useState('1Y');
@@ -254,20 +256,51 @@ export default function StockDetailDashboard({
 
   const latest = filteredData[filteredData.length - 1] || chartData[chartData.length - 1];
   const first = filteredData[0] || chartData[0];
-  const latestPrice = Number(liveTick?.lastPrice || stock.lastPrice || latest?.close || 0);
-  const dayChangePercent = Number(liveTick?.dayChangePercent ?? stock.dayChangePercent ?? 0);
-  const dayChange = Number(liveTick?.dayChange ?? (latestPrice * (dayChangePercent / 100)));
-  const trendUp = dayChangePercent >= 0;
-  const todayLow = Number(liveTick?.dayLow || latest?.low || latestPrice * 0.98);
-  const todayHigh = Number(liveTick?.dayHigh || latest?.high || latestPrice * 1.02);
-  const todayOpen = Number(liveTick?.open || stock.open || latest?.open || latestPrice * 0.99);
-  const prevClose = Number(liveTick?.prevClose || stock.prevClose || (latestPrice - dayChange));
-  const todayVolume = Number(liveTick?.volume || latest?.volume || 1500000);
-  const week52Low = Number(stock.week52Low || Math.min(...chartData.map((item) => item.low || item.close)));
-  const week52High = Number(stock.week52High || Math.max(...chartData.map((item) => item.high || item.close)));
-  const dataFreshness = liveTick?.dataFreshness || (stock.stale ? 'SNAPSHOT' : 'LIVE');
-  const isMarketOpen = liveTick?.marketStatus?.isMarketOpen ?? false;
-  const sessionDesc = liveTick?.marketStatus?.sessionDescription || 'NSE Regular Trading';
+
+  // Authoritative real-time quote resolution
+  const rawPrice = liveTick?.lastPrice ?? stock?.lastPrice ?? (latest?.close ? Number(latest.close) : null);
+  const latestPrice = rawPrice !== null && !isNaN(rawPrice) ? Number(rawPrice) : null;
+
+  const prevClose = liveTick?.previousClose ?? stock?.previousClose ?? (latestPrice !== null && stock?.dayChange ? latestPrice - stock.dayChange : null);
+
+  let dayChange = liveTick?.dayChange ?? stock?.dayChange ?? null;
+  let dayChangePercent = liveTick?.dayChangePercent ?? stock?.dayChangePercent ?? null;
+
+  if (latestPrice !== null && prevClose !== null && prevClose > 0) {
+    if (dayChange === null) {
+      dayChange = Number((latestPrice - prevClose).toFixed(2));
+    }
+    if (dayChangePercent === null) {
+      dayChangePercent = Number(((dayChange / prevClose) * 100).toFixed(2));
+    }
+  }
+
+  const trendUp = (dayChangePercent ?? 0) >= 0;
+  const todayLow = liveTick?.dayLow ?? stock?.dayLow ?? latest?.low ?? (latestPrice !== null ? latestPrice : null);
+  const todayHigh = liveTick?.dayHigh ?? stock?.dayHigh ?? latest?.high ?? (latestPrice !== null ? latestPrice : null);
+  const todayOpen = liveTick?.open ?? stock?.open ?? latest?.open ?? (latestPrice !== null ? latestPrice : null);
+  const todayVolume = liveTick?.volume ?? stock?.volume ?? latest?.volume ?? null;
+  const week52Low = Number(stock?.week52Low || (chartData.length > 0 ? Math.min(...chartData.map((item) => item.low || item.close)) : 0));
+  const week52High = Number(stock?.week52High || (chartData.length > 0 ? Math.max(...chartData.map((item) => item.high || item.close)) : 0));
+
+  const dataFreshness = liveTick?.dataFreshness || stock?.dataFreshness || (latestPrice === null ? 'UNAVAILABLE' : stock?.stale ? 'STALE' : 'DELAYED');
+  const isMarketOpen = liveTick?.marketStatus?.isMarketOpen ?? stock?.marketStatus?.isMarketOpen ?? false;
+  const sessionDesc = liveTick?.marketStatus?.sessionDescription || stock?.marketStatus?.sessionDescription || 'NSE Regular Trading';
+  const quoteTimestamp = liveTick?.quoteTimestamp || stock?.quoteTimestamp || null;
+
+  const formattedTimestamp = useMemo(() => {
+    if (!quoteTimestamp) return null;
+    try {
+      return new Date(quoteTimestamp).toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } catch {
+      return null;
+    }
+  }, [quoteTimestamp]);
   const [financialPeriod, setFinancialPeriod] = useState('Yearly');
   const [financials, setFinancials] = useState(null);
   const [financialsLoading, setFinancialsLoading] = useState(false);
@@ -380,13 +413,29 @@ export default function StockDetailDashboard({
                     isMarketOpen ? 'bg-emerald-500' : 'bg-slate-400'
                   }`}></span>
                 </span>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                  dataFreshness === 'LIVE'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : dataFreshness === 'DELAYED'
+                    ? 'bg-amber-100 text-amber-800'
+                    : dataFreshness === 'STALE'
+                    ? 'bg-orange-100 text-orange-800'
+                    : 'bg-slate-100 text-slate-700'
+                }`}>
                   {dataFreshness} • {isMarketOpen ? 'MARKET OPEN' : 'MARKET CLOSED'}
                 </span>
                 <span className="text-[11px] text-slate-400">•</span>
                 <span className="text-[11px] text-slate-500">
                   {sessionDesc}
                 </span>
+                {formattedTimestamp && (
+                  <>
+                    <span className="text-[11px] text-slate-400">•</span>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {formattedTimestamp} IST
+                    </span>
+                  </>
+                )}
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -397,11 +446,15 @@ export default function StockDetailDashboard({
                     ? 'bg-rose-100 text-rose-800 ring-2 ring-rose-400'
                     : 'text-slate-900'
                 }`}>
-                  {formatINR(latestPrice)}
+                  {latestPrice !== null ? formatINR(latestPrice) : 'Price Unavailable'}
                 </span>
-                <span className={`text-sm font-bold ${trendUp ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {trendUp ? '+' : ''}{formatINR(dayChange, { minimumFractionDigits: 2 })} ({trendUp ? '+' : ''}{dayChangePercent.toFixed(2)}%)
-                </span>
+                {dayChange !== null && dayChangePercent !== null ? (
+                  <span className={`text-sm font-bold ${trendUp ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {trendUp ? '+' : ''}{formatINR(dayChange, { minimumFractionDigits: 2 })} ({trendUp ? '+' : ''}{dayChangePercent.toFixed(2)}%)
+                  </span>
+                ) : (
+                  <span className="text-sm font-medium text-slate-400">—</span>
+                )}
                 <span className="text-sm font-medium text-slate-400">1D</span>
 
                 {/* Quick Chart View Selector */}
@@ -743,7 +796,7 @@ export default function StockDetailDashboard({
           </div>
         </section>
 
-        <AiCompanyBrief summary={aiSummary} loading={aiLoading} error={aiError} />
+        <AiCompanyBrief summary={aiSummary} loading={aiLoading} error={aiError} onRefresh={onRefreshAiSummary} />
 
         <section className="mt-10">
           <h2 className="text-xl font-bold text-slate-800">About</h2>

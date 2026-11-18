@@ -5,6 +5,7 @@ const Stock = require('../models/Stock');
 const {
   fetchStockFromPythonService,
   fetchPredictionFromPythonService,
+  fetchForecastFromPythonService,
   normalizeSymbol,
   PythonDataServiceError,
 } = require('../services/pythonDataService');
@@ -15,6 +16,18 @@ const { getStockFinancials } = require('../services/growwService');
 const marketDataEngine = require('../services/realtime/marketDataEngine');
 const { getMarketStatus } = require('../services/realtime/marketHours');
 const { handleStreamConnection } = require('../services/realtime/streamingGateway');
+const {
+  analyzeTechnicalSetup,
+} = require('../services/ai/technicalEngine');
+const {
+  analyzeRiskProfile,
+} = require('../services/ai/riskEngine');
+const {
+  analyzeFundamentals,
+} = require('../services/ai/fundamentalEngine');
+const {
+  generateResearchAssessment,
+} = require('../services/ai/researchEngine');
 const {
   calculateSMA,
   calculateEMA,
@@ -161,28 +174,14 @@ router.get('/:ticker/prediction', async (req, res) => {
         });
       }
 
-      // Generate a reasonable 90-day trajectory based on baseline market data
-      const offlineStock = buildOfflineStockData(cleanTicker);
-      const base = Number(offlineStock.lastPrice) || 1000;
-      const predictions = [];
-      const now = Date.now();
-      const dayMs = 24 * 60 * 60 * 1000;
-
-      for (let i = 1; i <= 90; i++) {
-        const d = new Date(now + i * dayMs);
-        const factor = 1 + (Math.sin(i / 15) * 0.03 + (i / 90) * 0.05);
-        predictions.push({
-          date: d.toISOString().split('T')[0],
-          predictedClose: Number((base * factor).toFixed(2)),
-        });
-      }
-
+      // When prediction service is unavailable and no prior prediction exists, return clear unavailable status
       return res.status(200).json({
         success: true,
         ticker: cleanTicker,
-        predictions,
-        r2Score: 0.88,
+        predictions: [],
+        r2Score: null,
         stale: true,
+        unavailable: true,
       });
     }
   } catch (err) {
@@ -244,6 +243,133 @@ router.get('/:ticker/ai-summary', async (req, res) => {
   }
 });
 
+// @route   GET /api/stocks/:ticker/technical-analysis
+// @desc    Deterministic technical indicators and market structure
+// @access  Public
+router.get('/:ticker/technical-analysis', async (req, res) => {
+  const rawTicker = req.params.ticker;
+  if (!isValidTicker(rawTicker)) {
+    return res.status(400).json({ success: false, error: 'Invalid ticker symbol.' });
+  }
+  const cleanTicker = normalizeSymbol(rawTicker);
+  try {
+    let stock = await findStockSafe(cleanTicker);
+    if (!stock || !stock.history5y?.length) {
+      try {
+        const fresh = await fetchStockFromPythonService(rawTicker);
+        stock = await saveStockDocument(fresh);
+      } catch {
+        stock = buildOfflineStockData(cleanTicker);
+      }
+    }
+    const quote = await marketDataEngine.getQuote(cleanTicker);
+    const analysis = analyzeTechnicalSetup(stock.history5y || [], quote.lastPrice || stock.lastPrice);
+    return res.status(200).json({
+      success: true,
+      ticker: cleanTicker,
+      data: analysis,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to compute technical analysis.' });
+  }
+});
+
+// @route   GET /api/stocks/:ticker/risk-analysis
+// @desc    Deterministic volatility, maximum drawdown, and beta analysis
+// @access  Public
+router.get('/:ticker/risk-analysis', async (req, res) => {
+  const rawTicker = req.params.ticker;
+  if (!isValidTicker(rawTicker)) {
+    return res.status(400).json({ success: false, error: 'Invalid ticker symbol.' });
+  }
+  const cleanTicker = normalizeSymbol(rawTicker);
+  try {
+    let stock = await findStockSafe(cleanTicker);
+    if (!stock || !stock.history5y?.length) {
+      try {
+        const fresh = await fetchStockFromPythonService(rawTicker);
+        stock = await saveStockDocument(fresh);
+      } catch {
+        stock = buildOfflineStockData(cleanTicker);
+      }
+    }
+    const quote = await marketDataEngine.getQuote(cleanTicker);
+    const risk = analyzeRiskProfile(stock.history5y || [], [], quote.lastPrice || stock.lastPrice);
+    return res.status(200).json({
+      success: true,
+      ticker: cleanTicker,
+      data: risk,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to compute risk analysis.' });
+  }
+});
+
+// @route   GET /api/stocks/:ticker/research-assessment
+// @desc    Synthesized evidence-based research assessment (Positive/Neutral/Negative/Insufficient)
+// @access  Public
+router.get('/:ticker/research-assessment', async (req, res) => {
+  const rawTicker = req.params.ticker;
+  if (!isValidTicker(rawTicker)) {
+    return res.status(400).json({ success: false, error: 'Invalid ticker symbol.' });
+  }
+  const cleanTicker = normalizeSymbol(rawTicker);
+  try {
+    let stock = await findStockSafe(cleanTicker);
+    if (!stock || !stock.history5y?.length) {
+      try {
+        const fresh = await fetchStockFromPythonService(rawTicker);
+        stock = await saveStockDocument(fresh);
+      } catch {
+        stock = buildOfflineStockData(cleanTicker);
+      }
+    }
+    const quote = await marketDataEngine.getQuote(cleanTicker);
+    const stockData = stockToResponse(stock, false, quote.dataSource || 'yfinance');
+    if (quote.lastPrice !== null) {
+      stockData.lastPrice = quote.lastPrice;
+    }
+    const assessment = generateResearchAssessment(stockData);
+    return res.status(200).json({
+      success: true,
+      ticker: cleanTicker,
+      data: assessment,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to generate research assessment.' });
+  }
+});
+
+// @route   GET /api/stocks/:ticker/forecast
+// @desc    Machine Learning walk-forward forecasting & baseline comparison
+// @access  Public
+router.get('/:ticker/forecast', async (req, res) => {
+  const rawTicker = req.params.ticker;
+  if (!isValidTicker(rawTicker)) {
+    return res.status(400).json({ success: false, error: 'Invalid ticker symbol.' });
+  }
+  const cleanTicker = normalizeSymbol(rawTicker);
+  try {
+    const forecastData = await fetchForecastFromPythonService(cleanTicker);
+    return res.status(200).json({
+      success: true,
+      ticker: cleanTicker,
+      data: forecastData,
+    });
+  } catch (err) {
+    return res.status(200).json({
+      success: true,
+      ticker: cleanTicker,
+      data: {
+        validated: false,
+        status: 'SERVICE_UNAVAILABLE',
+        message: 'Quantitative machine learning forecasting service is currently unavailable. No future price targets will be displayed.',
+        predictions: [],
+      },
+    });
+  }
+});
+
 // @route   GET /api/stocks/:ticker/financials
 // @desc    Get company quarterly and yearly financials (revenue, profit, growth, fundamentals, shareholding)
 // @access  Public
@@ -284,6 +410,71 @@ router.get('/:ticker/financials', async (req, res) => {
 router.get('/stream', handleStreamConnection);
 
 // ──────────────────────────────────────────────────────────
+// @route   GET /api/stocks/provider/status
+// @desc    Get current market data provider connectivity & Upstox credential status
+// @access  Public
+// ──────────────────────────────────────────────────────────
+router.get('/provider/status', (req, res) => {
+  const { upstoxMarketDataAdapter } = require('../services/brokers/upstoxMarketDataAdapter');
+  const { growwMarketDataAdapter } = require('../services/brokers/growwMarketDataAdapter');
+  const { angelOneMarketDataAdapter } = require('../services/brokers/angelOneMarketDataAdapter');
+  const upstoxStatus = upstoxMarketDataAdapter.getAuthStatus();
+  const growwStatus = growwMarketDataAdapter.getAuthStatus();
+  const angelOneStatus = angelOneMarketDataAdapter.getAuthStatus();
+  const marketStatus = getMarketStatus();
+
+  let activeProvider = 'yfinance';
+  if (growwStatus.status === 'READY') {
+    activeProvider = 'groww';
+  } else if (upstoxStatus.status === 'READY') {
+    activeProvider = 'upstox';
+  } else if (angelOneStatus.status === 'READY') {
+    activeProvider = 'angelone';
+  }
+
+  return res.status(200).json({
+    success: true,
+    activeProvider,
+    groww: growwStatus,
+    upstox: upstoxStatus,
+    angelone: angelOneStatus,
+    marketStatus,
+  });
+});
+
+// ──────────────────────────────────────────────────────────
+// @route   GET /api/stocks/provider/verify-groww
+// @desc    Live connectivity verification test for Groww Trading API
+// @access  Public
+// ──────────────────────────────────────────────────────────
+router.get('/provider/verify-groww', async (req, res) => {
+  const { growwMarketDataAdapter } = require('../services/brokers/growwMarketDataAdapter');
+  const authStatus = growwMarketDataAdapter.getAuthStatus();
+  const testResult = await growwMarketDataAdapter.verifyConnection();
+
+  return res.status(200).json({
+    authStatus,
+    verification: testResult,
+  });
+});
+
+// ──────────────────────────────────────────────────────────
+// @route   GET /api/stocks/provider/verify-angelone
+// @desc    Live connectivity verification test for Angel One SmartAPI
+// @access  Public
+// ──────────────────────────────────────────────────────────
+router.get('/provider/verify-angelone', async (req, res) => {
+  const { angelOneMarketDataAdapter } = require('../services/brokers/angelOneMarketDataAdapter');
+  const authStatus = angelOneMarketDataAdapter.getAuthStatus();
+  const testResult = await angelOneMarketDataAdapter.verifyConnection();
+
+  return res.status(200).json({
+    authStatus,
+    verification: testResult,
+  });
+});
+
+// ──────────────────────────────────────────────────────────
 // @route   GET /api/stocks/overview/market
 // @desc    Real-time Indian market overview (NIFTY 50, SENSEX, BANK NIFTY, gainers, losers)
 // @access  Public
@@ -292,39 +483,8 @@ router.get('/overview/market', async (req, res) => {
   try {
     const marketStatus = getMarketStatus();
 
-    // 1. Benchmark Indices (Calculated from tracked market universe & reference levels)
-    const indices = [
-      {
-        name: 'NIFTY 50',
-        symbol: '^NSEI',
-        lastPrice: 24150.25,
-        change: 156.4,
-        percentChange: 0.65,
-        open: 24020.1,
-        dayHigh: 24185.5,
-        dayLow: 23990.2,
-      },
-      {
-        name: 'SENSEX',
-        symbol: '^BSESN',
-        lastPrice: 79480.1,
-        change: 458.2,
-        percentChange: 0.58,
-        open: 79100.5,
-        dayHigh: 79590.0,
-        dayLow: 78980.4,
-      },
-      {
-        name: 'BANK NIFTY',
-        symbol: '^NSEBANK',
-        lastPrice: 51200.4,
-        change: 415.8,
-        percentChange: 0.82,
-        open: 50850.0,
-        dayHigh: 51310.2,
-        dayLow: 50780.0,
-      },
-    ];
+    // 1. Benchmark Indices (Fetched dynamically from market data engine; never hardcoded)
+    const indices = await marketDataEngine.getIndexQuotes();
 
     // 2. Tracked universe quotes
     const trackedSymbols = [
@@ -346,15 +506,15 @@ router.get('/overview/market', async (req, res) => {
     ];
 
     const quotes = await marketDataEngine.getQuotes(trackedSymbols);
-    const quoteList = Object.values(quotes).filter(Boolean);
+    const quoteList = Object.values(quotes).filter((q) => q && q.lastPrice !== null);
 
     // Sort for Gainers, Losers, Most Active
     const topGainers = [...quoteList]
-      .sort((a, b) => b.dayChangePercent - a.dayChangePercent)
+      .sort((a, b) => (b.dayChangePercent || 0) - (a.dayChangePercent || 0))
       .slice(0, 5);
 
     const topLosers = [...quoteList]
-      .sort((a, b) => a.dayChangePercent - b.dayChangePercent)
+      .sort((a, b) => (a.dayChangePercent || 0) - (b.dayChangePercent || 0))
       .slice(0, 5);
 
     const mostActive = [...quoteList]
@@ -547,7 +707,7 @@ router.get('/:ticker/candles', async (req, res) => {
 });
 
 // @route   GET /api/stocks/:ticker
-// @desc    Get stock by ticker symbol (checks cache, yfinance, NSE fallback, or rich offline profile)
+// @desc    Get stock by ticker symbol (combines cached/live company profile with authoritative market quote)
 // @access  Public
 router.get('/:ticker', async (req, res) => {
   const rawTicker = req.params.ticker;
@@ -562,92 +722,79 @@ router.get('/:ticker', async (req, res) => {
   const cleanTicker = normalizeSymbol(rawTicker);
 
   try {
-    // 1. Check in-memory/MongoDB cache first
-    let stock = await findStockSafe(cleanTicker);
-
+    // 1. Fetch company profile (metadata, financials, 5y history)
+    let stockProfile = await findStockSafe(cleanTicker);
     const now = Date.now();
-    const lastFetched = stock && stock.lastFetchedAt ? new Date(stock.lastFetchedAt).getTime() : 0;
-    const isCacheFresh = stock && (now - lastFetched < CACHE_TTL_MS);
+    const lastFetched = stockProfile && stockProfile.lastFetchedAt ? new Date(stockProfile.lastFetchedAt).getTime() : 0;
+    const isProfileFresh = stockProfile && (now - lastFetched < CACHE_TTL_MS);
 
-    if (isCacheFresh && stock.lastPrice > 0) {
-      console.log(`[Cache HIT] Serving cached data for ${cleanTicker}`);
-      return res.status(200).json({
-        success: true,
-        data: stockToResponse(stock, false, 'cache'),
-        stale: false,
-      });
+    if (!isProfileFresh) {
+      try {
+        const freshStockData = await fetchStockFromPythonService(rawTicker);
+        stockProfile = await saveStockDocument(freshStockData);
+      } catch (fetchErr) {
+        if (!stockProfile) {
+          try {
+            stockProfile = await fetchAndSaveStock(cleanTicker);
+          } catch {
+            stockProfile = await saveStockDocument(buildOfflineStockData(cleanTicker));
+          }
+        }
+      }
     }
 
-    // 2. Try fetching from live services
-    try {
-      const freshStockData = await fetchStockFromPythonService(rawTicker);
-      const freshStock = await saveStockDocument(freshStockData);
-
-      return res.status(200).json({
-        success: true,
-        data: stockToResponse(freshStock, false, 'yfinance'),
-        stale: false,
-      });
-    } catch (fetchErr) {
-      console.warn(`[StockRoutes] Python service fetch failed for ${cleanTicker}: ${fetchErr.message}`);
-
-      try {
-        const fallbackStock = await fetchAndSaveStock(cleanTicker);
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(fallbackStock, false, 'nse-fallback'),
-          stale: false,
-          warning: 'Served company details from NSE fallback data.',
-        });
-      } catch (fallbackErr) {
-        // Fallback to offline profile
-      }
-
-      // If cached copy exists even if expired, return it
-      if (stock && stock.lastPrice > 0) {
-        console.log(`[Cache FALLBACK] Serving cached data for ${cleanTicker}`);
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(stock, true, 'stale-cache'),
-          stale: true,
-        });
-      }
-
-      // 3. Serve rich offline profile
-      try {
-        const offlineStock = await saveStockDocument(buildOfflineStockData(cleanTicker));
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(offlineStock, true, 'offline-profile'),
-          stale: true,
-          warning: 'Served company profile with baseline market estimates.',
-        });
-      } catch (offlineErr) {
-        console.warn(`[StockRoutes] Offline save failed for ${cleanTicker}:`, offlineErr.message);
-        const baseline = buildOfflineStockData(cleanTicker);
-        return res.status(200).json({
-          success: true,
-          data: stockToResponse(baseline, true, 'offline-profile'),
-          stale: true,
-          warning: 'Served company profile with baseline market estimates.',
-        });
-      }
+    if (!stockProfile) {
+      stockProfile = buildOfflineStockData(cleanTicker);
     }
+
+    // 2. Obtain authoritative normalized market quote
+    const quote = await marketDataEngine.getQuote(cleanTicker);
+
+    // 3. Assemble unified response object
+    const responseData = stockToResponse(
+      stockProfile,
+      quote.dataFreshness === 'STALE',
+      quote.dataSource || 'yfinance'
+    );
+
+    // Merge authoritative price fields from market data engine
+    if (quote.lastPrice !== null) {
+      responseData.lastPrice = quote.lastPrice;
+      responseData.previousClose = quote.previousClose;
+      responseData.dayChange = quote.change;
+      responseData.dayChangePercent = quote.dayChangePercent;
+      responseData.open = quote.open;
+      responseData.dayHigh = quote.dayHigh;
+      responseData.dayLow = quote.dayLow;
+      responseData.volume = quote.volume;
+      responseData.quoteTimestamp = quote.quoteTimestamp;
+      responseData.dataFreshness = quote.dataFreshness;
+      responseData.dataStatus = quote.dataStatus;
+      responseData.dataSource = quote.dataSource;
+    } else {
+      responseData.lastPrice = null;
+      responseData.previousClose = null;
+      responseData.dayChange = null;
+      responseData.dayChangePercent = null;
+      responseData.dataFreshness = 'UNAVAILABLE';
+      responseData.dataStatus = 'unavailable';
+      responseData.stale = true;
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: responseData,
+      stale: responseData.dataFreshness === 'STALE' || responseData.dataFreshness === 'UNAVAILABLE',
+    });
   } catch (err) {
     console.error(`[StockRoutes] Unexpected error processing ${cleanTicker}:`, err);
-    try {
-      const offlineStock = buildOfflineStockData(cleanTicker);
-      return res.status(200).json({
-        success: true,
-        data: stockToResponse(offlineStock, true, 'offline-profile'),
-        stale: true,
-      });
-    } catch {
-      return res.status(500).json({
-        success: false,
-        error: 'An unexpected server error occurred.',
-      });
-    }
+    const offlineProfile = buildOfflineStockData(cleanTicker);
+    return res.status(200).json({
+      success: true,
+      data: stockToResponse(offlineProfile, true, 'unavailable'),
+      stale: true,
+      warning: 'Unable to fetch real-time market data.',
+    });
   }
 });
 

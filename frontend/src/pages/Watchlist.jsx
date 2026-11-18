@@ -459,16 +459,12 @@ export default function Watchlist() {
                   const pct = stock ? Number(stock.dayChangePercent || 0) : 0;
                   const isPositive = pct >= 0;
 
-                  // Rupee change
-                  let rupeeChange = 0;
-                  if (stock?.history5y && stock.history5y.length >= 2) {
-                    const lastClose = Number(stock.history5y[stock.history5y.length - 1].close || 0);
-                    const prevClose = Number(stock.history5y[stock.history5y.length - 2].close || 0);
-                    rupeeChange = lastClose - prevClose;
-                  } else if (stock?.lastPrice) {
-                    const prev = stock.lastPrice / (1 + pct / 100);
-                    rupeeChange = stock.lastPrice - prev;
-                  }
+                  // Genuine Day Change calculation (LTP - Previous Close)
+                  let rupeeChange = stock?.dayChange !== undefined && stock?.dayChange !== null
+                    ? Number(stock.dayChange)
+                    : (stock?.lastPrice && stock?.previousClose
+                      ? Number((stock.lastPrice - stock.previousClose).toFixed(2))
+                      : 0);
 
                   const volume =
                     stock?.history5y && stock.history5y.length > 0
@@ -551,8 +547,8 @@ export default function Watchlist() {
                       <td className="px-4 py-4 text-right font-bold text-slate-900 whitespace-nowrap">
                         {isLoading ? (
                           <div className="ml-auto h-4 w-16 animate-pulse rounded bg-slate-200" />
-                        ) : error ? (
-                          <span className="text-xs text-slate-400">—</span>
+                        ) : error || stock?.lastPrice === null || stock?.lastPrice === undefined ? (
+                          <span className="text-xs text-slate-400 font-medium">Unavailable</span>
                         ) : (
                           `₹${formatINR(stock?.lastPrice)}`
                         )}

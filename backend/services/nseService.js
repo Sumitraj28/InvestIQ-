@@ -252,48 +252,17 @@ const COMPANY_DIRECTORY = {
   },
 };
 
-function generateHistorySeries(lastPrice, points = 365) {
-  const price = Number(lastPrice) || 1000;
-  const history = [];
-  const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  let current = price * 0.85;
-  for (let i = points; i >= 0; i--) {
-    const date = new Date(now - i * dayMs);
-    const variance = (Math.sin(i / 10) * 0.015 + (Math.random() - 0.48) * 0.02);
-    current = current * (1 + variance);
-    if (i === 0) current = price;
-
-    const dayHigh = current * (1 + Math.random() * 0.015);
-    const dayLow = current * (1 - Math.random() * 0.015);
-    const dayOpen = dayLow + Math.random() * (dayHigh - dayLow);
-
-    history.push({
-      date: date.toISOString().split('T')[0],
-      open: Number(dayOpen.toFixed(2)),
-      high: Number(dayHigh.toFixed(2)),
-      low: Number(dayLow.toFixed(2)),
-      close: Number(current.toFixed(2)),
-      volume: Math.floor(500000 + Math.random() * 2000000),
-    });
-  }
-  return history;
-}
-
 function buildBusinessSummary(symbol, profile) {
   const name = profile.name || `${symbol} Limited`;
   const sector = profile.sector || 'NSE Equity';
   const industry = profile.industry || sector;
 
-  return `${name} is a leading Indian listed company in the ${sector} sector, with core exposure to ${industry}. This overview provides technical indicators, valuation metrics, 52-week range, and broker integration for seamless order execution. Review fundamentals and charts before making investment decisions.`;
+  return `${name} is a leading Indian listed company in the ${sector} sector, with core exposure to ${industry}. This overview provides corporate metadata, valuation metrics, and broker integration for order execution. Review verified exchange quotes before making investment decisions.`;
 }
 
 function buildOfflineStockData(symbol) {
   const cleanSymbol = normalizeSymbol(symbol);
   const dir = COMPANY_DIRECTORY[cleanSymbol] || {};
-  const lastPrice = dir.lastPrice || 1200;
-  const history5y = generateHistorySeries(lastPrice, 180);
 
   const profile = {
     name: dir.name || `${cleanSymbol} Limited`,
@@ -308,14 +277,18 @@ function buildOfflineStockData(symbol) {
     industry: profile.industry,
     website: dir.website || '',
     businessSummary: buildBusinessSummary(cleanSymbol, profile),
-    marketCap: dir.marketCap || Math.round(lastPrice * 100000000),
-    peRatio: dir.peRatio || 24.5,
-    week52High: dir.week52High || Number((lastPrice * 1.15).toFixed(2)),
-    week52Low: dir.week52Low || Number((lastPrice * 0.78).toFixed(2)),
-    lastPrice: lastPrice,
-    dayChangePercent: dir.dayChangePercent || 0.85,
-    history5y,
-    lastFetchedAt: new Date(),
+    marketCap: dir.marketCap || 0,
+    peRatio: dir.peRatio || 0,
+    week52High: dir.week52High || null,
+    week52Low: dir.week52Low || null,
+    lastPrice: null, // Clear unavailable state; do not invent fake prices
+    previousClose: null,
+    dayChange: null,
+    dayChangePercent: null,
+    history5y: [],
+    lastFetchedAt: null,
+    dataFreshness: 'UNAVAILABLE',
+    dataStatus: 'unavailable',
   };
 }
 

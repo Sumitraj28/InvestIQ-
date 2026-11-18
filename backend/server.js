@@ -45,10 +45,17 @@ app.use((req, res) => {
   });
 });
 
-// Port configuration
-const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || '127.0.0.1';
+// Global crash protection
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Unhandled Rejection]', reason?.message || reason);
+});
 
-app.listen(PORT, HOST, () => {
-  console.log(`[StockSense] Server running on http://${HOST}:${PORT}`);
+// Port configuration
+const PORT = process.env.PORT || 5050;
+
+app.listen(PORT, () => {
+  console.log(`[StockSense] Server running on http://localhost:${PORT}`);
 });

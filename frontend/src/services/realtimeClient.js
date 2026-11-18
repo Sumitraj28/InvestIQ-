@@ -12,7 +12,7 @@
  * - Clean unsubscribe handling to avoid memory leaks
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5050/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 class RealtimeClient {
   constructor() {
@@ -168,11 +168,13 @@ class RealtimeClient {
         this.reconnectAttempts = 0;
       };
 
-      // 1. Tick events
-      this.eventSource.addEventListener('tick', (e) => {
+      const dispatchTick = (rawData) => {
         try {
-          const quote = JSON.parse(e.data);
-          const symbol = quote.symbol?.toUpperCase();
+          const payload = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+          const quote = payload.data || payload;
+          const rawSym = quote.symbol || quote.ticker || '';
+          const symbol = String(rawSym).toUpperCase().replace(/\.(NS|BO)$/i, '');
+
           if (symbol && this.subscribers.has(symbol)) {
             this.subscribers.get(symbol).forEach((fn) => {
               try {
@@ -182,10 +184,31 @@ class RealtimeClient {
               }
             });
           }
+
+          // Also deliver to wildcard subscribers
+          if (this.subscribers.has('*')) {
+            this.subscribers.get('*').forEach((fn) => {
+              try {
+                fn(quote);
+              } catch (err) {
+                console.error('[RealtimeClient] Wildcard tick subscriber error:', err);
+              }
+            });
+          }
         } catch (err) {
-          console.warn('[RealtimeClient] Failed to parse tick event:', err);
+          console.warn('[RealtimeClient] Failed to parse tick event payload:', err);
         }
+      };
+
+      // 1. Named 'tick' events
+      this.eventSource.addEventListener('tick', (e) => {
+        dispatchTick(e.data);
       });
+
+      // Default message listener fallback
+      this.eventSource.onmessage = (e) => {
+        dispatchTick(e.data);
+      };
 
       // 2. Heartbeat events
       this.eventSource.addEventListener('heartbeat', (e) => {

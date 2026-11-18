@@ -74,8 +74,8 @@ export default function InvestmentPage() {
           setSelectedStock((prev) => ({
             ...prev,
             name: d.name || prev.name,
-            price: Number(d.lastPrice || prev.price || 0),
-            dayChangePercent: Number(d.dayChangePercent || 0),
+            price: d.lastPrice !== null && d.lastPrice !== undefined && !isNaN(d.lastPrice) ? Number(d.lastPrice) : null,
+            dayChangePercent: d.dayChangePercent !== null && d.dayChangePercent !== undefined ? Number(d.dayChangePercent) : null,
             dayHigh: d.dayHigh || null,
             dayLow: d.dayLow || null,
             week52High: d.week52High || null,

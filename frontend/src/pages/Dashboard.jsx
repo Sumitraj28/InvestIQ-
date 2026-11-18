@@ -21,6 +21,7 @@ import CompanyLogo from '../components/CompanyLogo';
 import AddInvestmentModal from '../components/AddInvestmentModal';
 import MarketOverviewBar from '../components/MarketOverviewBar';
 import { getStock, getPortfolioSummary } from '../services/api';
+import realtimeClient from '../services/realtimeClient';
 import { popularTickers } from '../data/popularTickers';
 import { useAuth, useUser } from '@clerk/react';
 
@@ -31,12 +32,6 @@ function formatINR(val) {
     minimumFractionDigits: 2,
   })}`;
 }
-
-const marketIndices = [
-  { name: 'NIFTY 50', value: '25,327.05', change: '+0.41%', positive: true },
-  { name: 'SENSEX', value: '82,679.14', change: '+0.36%', positive: true },
-  { name: 'BANK NIFTY', value: '57,221.80', change: '-0.18%', positive: false },
-];
 
 const products = [
   { label: 'Stocks', icon: TrendingUp, color: 'bg-emerald-50 text-emerald-700', path: '/invest' },
@@ -54,17 +49,29 @@ export default function Dashboard() {
   const [portfolioLoading, setPortfolioLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const [stocks, setStocks] = useState([
-    { ticker: 'RELIANCE.NS', name: 'Reliance Industries', price: '₹2,985.40', change: '+0.85%', positive: true, sector: 'Energy' },
-    { ticker: 'TCS.NS', name: 'Tata Consultancy Services', price: '₹4,210.00', change: '-0.45%', positive: false, sector: 'Technology' },
-    { ticker: 'INFY.NS', name: 'Infosys Limited', price: '₹1,895.60', change: '+1.15%', positive: true, sector: 'Technology' },
-    { ticker: 'HDFCBANK.NS', name: 'HDFC Bank Limited', price: '₹1,675.20', change: '+0.32%', positive: true, sector: 'Financial Services' },
-  ]);
+  const [stocks, setStocks] = useState(() =>
+    popularTickers.slice(0, 4).map((item) => ({
+      ticker: item.symbol,
+      name: item.name,
+      price: 'Loading...',
+      change: '—',
+      positive: true,
+      sector: item.sector,
+    }))
+  );
 
   // Load real user portfolio data
   const loadPortfolio = async () => {
+    if (!user) {
+      setPortfolioLoading(false);
+      return;
+    }
     try {
       const token = await getToken();
+      if (!token) {
+        setPortfolioLoading(false);
+        return;
+      }
       const res = await getPortfolioSummary(token);
       if (res?.success) {
         setPortfolioSummary(res.data);
@@ -78,12 +85,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadPortfolio();
-  }, [getToken]);
+  }, [user?.id]);
 
   useEffect(() => {
     let isMounted = true;
+    const symbols = popularTickers.slice(0, 4).map((item) => item.symbol);
+    const cleanSymbols = symbols.map((s) => s.replace(/\.(NS|BO)$/i, ''));
+
     const fetchTopStocks = async () => {
-      const symbols = popularTickers.slice(0, 4).map((item) => item.symbol);
       try {
         const promises = symbols.map((sym) => getStock(sym).catch(() => null));
         const results = await Promise.all(promises);
@@ -93,12 +102,17 @@ export default function Dashboard() {
             .filter((r) => r && r.data)
             .map((r) => {
               const d = r.data;
+              const hasPrice = d.lastPrice !== null && d.lastPrice !== undefined && !isNaN(d.lastPrice);
               const isPos = (d.dayChangePercent || 0) >= 0;
               return {
                 ticker: d.ticker,
                 name: d.name,
-                price: `₹${Number(d.lastPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
-                change: `${isPos ? '+' : ''}${Number(d.dayChangePercent || 0).toFixed(2)}%`,
+                price: hasPrice
+                  ? `₹${Number(d.lastPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : 'Price Unavailable',
+                change: hasPrice && d.dayChangePercent !== null
+                  ? `${isPos ? '+' : ''}${Number(d.dayChangePercent).toFixed(2)}%`
+                  : '—',
                 positive: isPos,
                 sector: d.sector,
               };
@@ -114,8 +128,37 @@ export default function Dashboard() {
     };
 
     fetchTopStocks();
+
+    // Subscribe to live tick updates
+    const unsubscribe = realtimeClient.subscribe(cleanSymbols, (tick) => {
+      if (!isMounted || !tick?.symbol) return;
+      const tickSym = tick.symbol.toUpperCase();
+
+      setStocks((prev) =>
+        prev.map((item) => {
+          const itemClean = item.ticker.replace(/\.(NS|BO)$/i, '').toUpperCase();
+          if (itemClean !== tickSym) return item;
+
+          const hasPrice = tick.lastPrice !== null && tick.lastPrice !== undefined && !isNaN(tick.lastPrice);
+          const isPos = (tick.dayChangePercent || 0) >= 0;
+
+          return {
+            ...item,
+            price: hasPrice
+              ? `₹${Number(tick.lastPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : item.price,
+            change: hasPrice && tick.dayChangePercent !== null
+              ? `${isPos ? '+' : ''}${Number(tick.dayChangePercent).toFixed(2)}%`
+              : item.change,
+            positive: isPos,
+          };
+        })
+      );
+    });
+
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 

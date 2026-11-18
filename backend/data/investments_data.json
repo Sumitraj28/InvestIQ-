@@ -1,21 +1,21 @@
 {
   "investments": [
     {
-      "_id": "inv_1794926785790_nqbppig",
+      "_id": "inv_1794980014298_oz1uqon",
       "userId": "user_test_alpha_123",
       "companyName": "Tata Consultancy Services",
       "stockSymbol": "TCS",
       "brokerName": "Zerodha Kite",
       "quantity": 5,
       "purchasePrice": 3800,
-      "purchaseDate": "2026-11-17T14:46:25.790Z",
+      "purchaseDate": "2026-11-18T05:33:34.298Z",
       "exchange": "NSE",
       "notes": "",
       "totalInvestment": 19000,
       "source": "manual",
       "brokerOrderId": null,
-      "createdAt": "2026-11-17T14:46:25.790Z",
-      "updatedAt": "2026-11-17T14:46:25.791Z"
+      "createdAt": "2026-11-18T05:33:34.298Z",
+      "updatedAt": "2026-11-18T05:33:34.298Z"
     }
   ],
   "brokerSyncs": [
@@ -25,10 +25,10 @@
       "brokerDisplayName": "Groww",
       "status": "connected",
       "consentGiven": true,
-      "lastSyncedAt": "2026-11-17T14:46:25.794Z",
+      "lastSyncedAt": "2026-11-18T05:33:34.302Z",
       "syncMessage": "User consent recorded for groww. Official OAuth authorization verified.",
-      "accountMaskedId": "GRO-•••9994",
-      "updatedAt": "2026-11-17T14:46:25.794Z"
+      "accountMaskedId": "GRO-•••5877",
+      "updatedAt": "2026-11-18T05:33:34.302Z"
     }
   ],
   "brokerConnections": [],
@@ -36,7 +36,7 @@
   "reconciliationRecords": [],
   "priceAlerts": [
     {
-      "_id": "alert_1794926786564_rnaxr",
+      "_id": "alert_1794980014975_6x9d6",
       "userId": "test_user_alerts_999",
       "symbol": "RELIANCE",
       "companyName": "RELIANCE",
@@ -46,8 +46,8 @@
       "status": "ACTIVE",
       "triggeredAt": null,
       "notificationMessage": "",
-      "createdAt": "2026-11-17T14:46:26.564Z",
-      "updatedAt": "2026-11-17T14:46:26.564Z"
+      "createdAt": "2026-11-18T05:33:34.975Z",
+      "updatedAt": "2026-11-18T05:33:34.975Z"
     }
   ]
 }

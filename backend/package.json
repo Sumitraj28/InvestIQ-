@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node seed.js",
-    "test": "node test/portfolio.test.js && node test/brokerIntegration.test.js && node test/realtimeEngine.test.js",
+    "test": "node test/portfolio.test.js && node test/brokerIntegration.test.js && node test/realtimeEngine.test.js && node test/upstoxAdapter.test.js && node test/growwAdapter.test.js && node test/angelOneAdapter.test.js && node test/aiIntelligence.test.js",
     "test:brokers": "node test/brokerIntegration.test.js"
   },
   "dependencies": {

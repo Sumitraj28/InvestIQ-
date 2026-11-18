@@ -91,6 +91,29 @@ async function runTests() {
   const portfolioRoutes = require('../routes/portfolioRoutes');
   app.use('/api/portfolio', portfolioRoutes);
 
+  // Seed verified test fixture quotes in market data engine for price resolution tests
+  const marketDataEngine = require('../services/realtime/marketDataEngine');
+  marketDataEngine.ingestTick({
+    symbol: 'RELIANCE',
+    lastPrice: 2985.40,
+    previousClose: 2947.20,
+    open: 2950.00,
+    high: 2994.80,
+    low: 2942.00,
+    volume: 4820000,
+    source: 'test-fixture',
+  });
+  marketDataEngine.ingestTick({
+    symbol: 'TCS',
+    lastPrice: 4210.00,
+    previousClose: 4230.00,
+    open: 4220.00,
+    high: 4240.00,
+    low: 4200.00,
+    volume: 1200000,
+    source: 'test-fixture',
+  });
+
   const tokenUser1 = await createMockClerkToken('user_test_alpha_123');
   const tokenUser2 = await createMockClerkToken('user_test_beta_456');
 

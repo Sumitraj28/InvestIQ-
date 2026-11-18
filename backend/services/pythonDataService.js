@@ -14,6 +14,9 @@ class PythonDataServiceError extends Error {
 function normalizeSymbol(symbol) {
   if (!symbol || typeof symbol !== 'string') return '';
   let clean = symbol.trim().toUpperCase();
+  if (clean.startsWith('^')) {
+    return clean;
+  }
   if (clean.endsWith('.NS') || clean.endsWith('.BO')) {
     clean = clean.slice(0, -3);
   }
@@ -21,7 +24,11 @@ function normalizeSymbol(symbol) {
 }
 
 function toYFinanceTicker(symbol) {
+  if (!symbol || typeof symbol !== 'string') return '';
   const clean = symbol.trim().toUpperCase();
+  if (clean.startsWith('^')) {
+    return clean;
+  }
   if (clean.endsWith('.NS') || clean.endsWith('.BO')) {
     return clean;
   }
@@ -65,6 +72,34 @@ async function fetchJson(path, options = {}) {
   }
 }
 
+/**
+ * Fast lightweight quote fetcher (LTP, change, OHLC, volume)
+ */
+async function fetchQuoteFromPythonService(symbol) {
+  const yfTicker = toYFinanceTicker(symbol);
+  const encodedTicker = encodeURIComponent(yfTicker);
+  const price = await fetchJson(`/price/${encodedTicker}`, { timeoutMs: 15000 });
+
+  return {
+    symbol: normalizeSymbol(yfTicker),
+    ticker: yfTicker,
+    lastPrice: Number(price.currentPrice),
+    previousClose: Number(price.previousClose),
+    dayChange: Number(price.dayChange),
+    dayChangePercent: Number(price.dayChangePercent),
+    open: Number(price.open),
+    dayHigh: Number(price.dayHigh),
+    dayLow: Number(price.dayLow),
+    volume: Number(price.volume || 0),
+    quoteTimestamp: price.quoteTimestamp || new Date().toISOString(),
+    dataFreshness: price.dataFreshness || 'DELAYED',
+    dataSource: price.dataSource || 'yfinance',
+  };
+}
+
+/**
+ * Full profile fetcher (profile + summary + 5y history)
+ */
 async function fetchStockFromPythonService(symbol) {
   const yfTicker = toYFinanceTicker(symbol);
   const encodedTicker = encodeURIComponent(yfTicker);
@@ -87,7 +122,14 @@ async function fetchStockFromPythonService(symbol) {
     week52High: summary.week52High,
     week52Low: summary.week52Low,
     lastPrice: price.currentPrice,
+    previousClose: price.previousClose,
+    dayChange: price.dayChange,
     dayChangePercent: price.dayChangePercent,
+    open: price.open,
+    dayHigh: price.dayHigh,
+    dayLow: price.dayLow,
+    volume: price.volume,
+    quoteTimestamp: price.quoteTimestamp,
     history5y: history,
     lastFetchedAt: new Date(),
   };
@@ -105,14 +147,40 @@ async function fetchPredictionFromPythonService(symbol) {
     ticker: normalizeSymbol(yfTicker),
     predictions: prediction.predictions || [],
     r2Score: prediction.r2Score,
+    validated: Boolean(prediction.validated),
+    status: prediction.status,
+    message: prediction.message,
+    metrics: prediction.metrics || null,
+    lastFetchedAt: new Date(),
+  };
+}
+
+async function fetchForecastFromPythonService(symbol) {
+  const yfTicker = toYFinanceTicker(symbol);
+  const encodedTicker = encodeURIComponent(yfTicker);
+  const forecast = await fetchJson(`/forecast/${encodedTicker}`, {
+    method: 'GET',
+    timeoutMs: 60000,
+  });
+
+  return {
+    ticker: normalizeSymbol(yfTicker),
+    validated: Boolean(forecast.validated),
+    status: forecast.status,
+    message: forecast.message,
+    metrics: forecast.metrics || null,
+    predictions: forecast.predictions || [],
+    disclaimer: forecast.disclaimer,
     lastFetchedAt: new Date(),
   };
 }
 
 module.exports = {
   PythonDataServiceError,
+  fetchQuoteFromPythonService,
   fetchStockFromPythonService,
   fetchPredictionFromPythonService,
+  fetchForecastFromPythonService,
   normalizeSymbol,
   toYFinanceTicker,
 };

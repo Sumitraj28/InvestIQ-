@@ -18,11 +18,15 @@ function bindEngineEvents() {
 
     // 1. Broadcast to subscribed SSE clients
     for (const client of clients.values()) {
+      if (client.res.writableEnded) {
+        clients.delete(client.id);
+        continue;
+      }
       if (client.symbols.has(symbol) || client.symbols.has('*')) {
         try {
           client.res.write(`event: tick\ndata: ${tickData}\n\n`);
         } catch (err) {
-          console.warn(`[StreamingGateway] Error writing tick to client ${client.id}:`, err.message);
+          clients.delete(client.id);
         }
       }
     }
@@ -107,6 +111,10 @@ async function handleStreamConnection(req, res) {
     symbols: symbolsSet,
     userId,
   };
+
+  res.on('error', () => {
+    clients.delete(clientId);
+  });
 
   clients.set(clientId, client);
 

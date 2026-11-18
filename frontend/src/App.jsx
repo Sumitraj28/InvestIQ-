@@ -8,6 +8,7 @@ import InvestmentPage from './pages/InvestmentPage';
 import PortfolioPage from './pages/PortfolioPage';
 import ConnectedBrokersPage from './pages/ConnectedBrokersPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Show, SignInButton, SignUpButton, UserButton, useAuth } from '@clerk/react';
 import { BarChart3, Bell, Menu, LayoutDashboard, Wallet, TrendingUp, ShieldCheck, X } from 'lucide-react';
 
@@ -274,70 +275,43 @@ function AppShell() {
 
       {/* Main Content Area */}
       <main className={`flex-1 ${isLandingPage ? 'bg-[#FAFAF8]' : 'bg-slate-50'}`}>
-        <Routes>
-          {/* Public landing page */}
-          <Route path="/" element={<Home />} />
+        <ErrorBoundary>
+          <Routes>
+            {/* Public market intelligence & research pages */}
+            <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/invest" element={<InvestmentPage />} />
+            <Route path="/investment" element={<InvestmentPage />} />
+            <Route path="/company/:ticker" element={<CompanyPage />} />
+            <Route path="/watchlist" element={<Watchlist />} />
 
-          {/* Protected routes — require auth */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/portfolio"
-            element={
-              <ProtectedRoute>
-                <PortfolioPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/connected-brokers"
-            element={
-              <ProtectedRoute>
-                <ConnectedBrokersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/brokers"
-            element={
-              <ProtectedRoute>
-                <ConnectedBrokersPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/invest"
-            element={
-              <ProtectedRoute>
-                <InvestmentPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/investment"
-            element={
-              <ProtectedRoute>
-                <InvestmentPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/company/:ticker"
-            element={
-              <ProtectedRoute>
-                <CompanyPage />
-              </ProtectedRoute>
-            }
-          />
-          {/* Watchlist route */}
-          <Route path="/watchlist" element={<Watchlist />} />
-        </Routes>
+            {/* Protected routes — require user portfolio authentication */}
+            <Route
+              path="/portfolio"
+              element={
+                <ProtectedRoute>
+                  <PortfolioPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/connected-brokers"
+              element={
+                <ProtectedRoute>
+                  <ConnectedBrokersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/brokers"
+              element={
+                <ProtectedRoute>
+                  <ConnectedBrokersPage />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       {!isLandingPage && <AppFooter />}

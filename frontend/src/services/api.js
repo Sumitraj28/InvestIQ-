@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5050/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -33,6 +33,26 @@ export const getStockHistory = async (ticker) => {
 
 export const getStockAiSummary = async (ticker) => {
   const response = await api.get(`/stocks/${ticker}/ai-summary`);
+  return response.data;
+};
+
+export const getStockTechnicalAnalysis = async (ticker) => {
+  const response = await api.get(`/stocks/${ticker}/technical-analysis`);
+  return response.data;
+};
+
+export const getStockRiskAnalysis = async (ticker) => {
+  const response = await api.get(`/stocks/${ticker}/risk-analysis`);
+  return response.data;
+};
+
+export const getStockResearchAssessment = async (ticker) => {
+  const response = await api.get(`/stocks/${ticker}/research-assessment`);
+  return response.data;
+};
+
+export const getStockForecast = async (ticker) => {
+  const response = await api.get(`/stocks/${ticker}/forecast`);
   return response.data;
 };
 

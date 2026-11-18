@@ -8,6 +8,7 @@ import StockDetailDashboard, { StockDetailSkeleton } from '../components/StockDe
 function normalizeRouteTicker(value) {
   const decoded = decodeURIComponent(value || '').trim().toUpperCase();
   if (!decoded) return '';
+  if (decoded.startsWith('^')) return decoded;
   return decoded.includes('.') ? decoded : `${decoded}.NS`;
 }
 
@@ -160,6 +161,7 @@ export default function CompanyPage() {
           aiSummary={aiSummary}
           aiLoading={aiLoading}
           aiError={aiError}
+          onRefreshAiSummary={fetchAiSummary}
         />
       )}
     </div>

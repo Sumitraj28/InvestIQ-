@@ -6,79 +6,76 @@ const portfolioStore = require('../services/portfolioStore');
 const Stock = require('../models/Stock');
 const { normalizeSymbol } = require('../services/pythonDataService');
 const { getStockFinancials } = require('../services/growwService');
+const marketDataEngine = require('../services/realtime/marketDataEngine');
 
 // Apply authentication middleware to all portfolio routes
 router.use(requireAuth);
 
 /**
- * Helper to fetch latest known stock price
- * Checks MongoDB Stock cache first, then in-memory/fallback estimates
+ * Authoritative helper to fetch latest verified stock quote
+ * Uses centralized MarketDataEngine (Upstox -> yfinance -> verified cache -> unavailable)
  */
 async function getLatestStockPrice(rawSymbol) {
   const cleanSymbol = normalizeSymbol(rawSymbol);
-  const nseTicker = `${cleanSymbol}.NS`;
 
   try {
-    // 1. Check MongoDB Stock collection if connected
+    const quote = await marketDataEngine.getQuote(cleanSymbol);
+    if (quote && quote.lastPrice !== null && !isNaN(quote.lastPrice)) {
+      return {
+        price: Number(quote.lastPrice),
+        previousClose: quote.previousClose !== null ? Number(quote.previousClose) : null,
+        dayChange: quote.change !== null ? Number(quote.change) : null,
+        dayChangePercent: Number(quote.dayChangePercent || 0),
+        name: quote.companyName || cleanSymbol,
+        isLive: quote.dataFreshness === 'LIVE',
+        dataFreshness: quote.dataFreshness,
+        dataStatus: quote.dataStatus,
+        source: quote.dataSource,
+        quoteTimestamp: quote.quoteTimestamp,
+      };
+    }
+  } catch (err) {
+    console.warn(`[PortfolioRoutes] Quote fetch notice for ${cleanSymbol}:`, err.message);
+  }
+
+  // Check MongoDB Stock collection as final stale backup
+  try {
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       const cachedStock = await Stock.findOne({
-        $or: [{ ticker: cleanSymbol }, { ticker: nseTicker }],
+        $or: [{ ticker: cleanSymbol }, { ticker: `${cleanSymbol}.NS` }],
       });
 
       if (cachedStock && cachedStock.lastPrice > 0) {
         return {
           price: Number(cachedStock.lastPrice),
+          previousClose: Number(cachedStock.previousClose || cachedStock.lastPrice),
+          dayChange: null,
           dayChangePercent: Number(cachedStock.dayChangePercent || 0),
           name: cachedStock.name || cleanSymbol,
-          isLive: true,
+          isLive: false,
+          dataFreshness: 'STALE',
+          dataStatus: 'stale',
           source: 'cache',
+          quoteTimestamp: cachedStock.lastFetchedAt || null,
         };
       }
     }
   } catch (err) {
-    // Continue to fallback
+    // Continue
   }
 
-  // 2. Fallback baseline prices for major Indian equities if offline
-  const KNOWN_PRICES = {
-    RELIANCE: { price: 2985.40, dayChangePercent: 0.85, name: 'Reliance Industries Limited' },
-    TCS: { price: 4210.00, dayChangePercent: -0.45, name: 'Tata Consultancy Services Limited' },
-    INFY: { price: 1895.60, dayChangePercent: 1.15, name: 'Infosys Limited' },
-    HDFCBANK: { price: 1675.20, dayChangePercent: 0.32, name: 'HDFC Bank Limited' },
-    ICICIBANK: { price: 1245.80, dayChangePercent: 0.92, name: 'ICICI Bank Limited' },
-    SBIN: { price: 820.50, dayChangePercent: -0.25, name: 'State Bank of India' },
-    ITC: { price: 495.20, dayChangePercent: 0.15, name: 'ITC Limited' },
-    BHARTIARTL: { price: 1560.00, dayChangePercent: 1.40, name: 'Bharti Airtel Limited' },
-    LT: { price: 3620.00, dayChangePercent: -0.60, name: 'Larsen & Toubro Limited' },
-    KOTAKBANK: { price: 1780.00, dayChangePercent: 0.10, name: 'Kotak Mahindra Bank Limited' },
-    AXISBANK: { price: 1190.00, dayChangePercent: 0.45, name: 'Axis Bank Limited' },
-    WIPRO: { price: 540.20, dayChangePercent: -0.80, name: 'Wipro Limited' },
-    MARUTI: { price: 12450.00, dayChangePercent: 0.70, name: 'Maruti Suzuki India Limited' },
-    BAJFINANCE: { price: 7120.00, dayChangePercent: -1.10, name: 'Bajaj Finance Limited' },
-    TATAMOTORS: { price: 980.40, dayChangePercent: 1.65, name: 'Tata Motors Limited' },
-    TATASTEEL: { price: 158.20, dayChangePercent: 0.50, name: 'Tata Steel Limited' },
-    SUNPHARMA: { price: 1810.00, dayChangePercent: 0.35, name: 'Sun Pharmaceutical Industries' },
-    CIPLA: { price: 1520.00, dayChangePercent: -0.15, name: 'Cipla Limited' },
-    ASIANPAINT: { price: 2950.00, dayChangePercent: -0.40, name: 'Asian Paints Limited' },
-  };
-
-  const fallback = KNOWN_PRICES[cleanSymbol];
-  if (fallback) {
-    return {
-      price: fallback.price,
-      dayChangePercent: fallback.dayChangePercent,
-      name: fallback.name,
-      isLive: false,
-      source: 'directory',
-    };
-  }
-
+  // Clear unavailable state — Never return fake numbers
   return {
     price: null,
+    previousClose: null,
+    dayChange: null,
     dayChangePercent: 0,
     name: cleanSymbol,
     isLive: false,
+    dataFreshness: 'UNAVAILABLE',
+    dataStatus: 'unavailable',
     source: 'unavailable',
+    quoteTimestamp: null,
   };
 }
 

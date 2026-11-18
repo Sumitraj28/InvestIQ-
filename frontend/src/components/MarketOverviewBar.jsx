@@ -144,26 +144,46 @@ export default function MarketOverviewBar() {
         {activeTab === 'indices' && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {indices.map((idx) => {
-              const isPositive = idx.change >= 0;
+              const hasPrice = idx.lastPrice !== null && idx.lastPrice !== undefined && !isNaN(idx.lastPrice);
+              const isPositive = (idx.change || 0) >= 0;
               return (
                 <div
                   key={idx.name}
                   className="rounded-xl border border-slate-100 bg-slate-50/60 p-3.5 flex items-center justify-between"
                 >
                   <div>
-                    <div className="text-xs font-semibold text-slate-500">{idx.name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold text-slate-500">{idx.name}</span>
+                      {idx.dataFreshness && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                          idx.dataFreshness === 'LIVE'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : idx.dataFreshness === 'DELAYED'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {idx.dataFreshness}
+                        </span>
+                      )}
+                    </div>
                     <div className="text-base font-bold text-slate-900 mt-0.5">
-                      {idx.lastPrice?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {hasPrice
+                        ? `₹${Number(idx.lastPrice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : <span className="text-xs text-slate-400 font-medium">Quote Unavailable</span>}
                     </div>
                   </div>
-                  <div className={`text-right text-xs font-bold flex items-center space-x-1 ${
-                    isPositive ? 'text-emerald-600' : 'text-rose-600'
-                  }`}>
-                    {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                    <span>
-                      {isPositive ? '+' : ''}{idx.change?.toFixed(2)} ({isPositive ? '+' : ''}{idx.percentChange?.toFixed(2)}%)
-                    </span>
-                  </div>
+                  {hasPrice && idx.change !== null && idx.percentChange !== null ? (
+                    <div className={`text-right text-xs font-bold flex items-center space-x-1 ${
+                      isPositive ? 'text-emerald-600' : 'text-rose-600'
+                    }`}>
+                      {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                      <span>
+                        {isPositive ? '+' : ''}{Number(idx.change).toFixed(2)} ({isPositive ? '+' : ''}{Number(idx.percentChange).toFixed(2)}%)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-right text-xs text-slate-400 font-medium">—</div>
+                  )}
                 </div>
               );
             })}
