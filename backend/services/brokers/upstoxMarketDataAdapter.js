@@ -28,7 +28,9 @@ class UpstoxMarketDataAdapter {
     this.apiKey = config.apiKey || process.env.UPSTOX_API_KEY || null;
     this.apiSecret = config.apiSecret || process.env.UPSTOX_API_SECRET || null;
     this.redirectUri = config.redirectUri || process.env.UPSTOX_REDIRECT_URI || null;
-    this.accessToken = config.accessToken || process.env.UPSTOX_ACCESS_TOKEN || null;
+    this.accessToken = config.accessToken
+      || process.env.UPSTOX_ACCESS_TOKEN
+      || (process.env.UPSTOX_API_KEY && process.env.UPSTOX_API_KEY.startsWith('eyJ') ? process.env.UPSTOX_API_KEY : null);
     this.tokenExpiry = config.tokenExpiry || null;
   }
 
@@ -283,7 +285,7 @@ class UpstoxMarketDataAdapter {
 
   /**
    * Request authorized WebSocket URL for Upstox Market Data Feed V3
-   * Upstox Endpoint: GET /v2/feed/market-data-feed/authorize
+   * Upstox Endpoint: GET /v3/feed/market-data-feed/authorize
    */
   async getAuthorizedFeedUrl() {
     if (!this.hasCredentials()) {
@@ -294,22 +296,60 @@ class UpstoxMarketDataAdapter {
       };
     }
 
-    const res = await this._request('/feed/market-data-feed/authorize');
-    if (!res.success) return res;
-
-    const feedUrl = res.data?.authorizedRedirectUri;
-    if (!feedUrl) {
+    if (!this.accessToken) {
       return {
         success: false,
-        status: 'FEED_ERROR',
-        error: 'Upstox did not return an authorized streaming URI.',
+        status: 'PENDING_CREDENTIALS',
+        error: 'Upstox API access token not configured. Set UPSTOX_ACCESS_TOKEN in backend environment.',
       };
     }
 
-    return {
-      success: true,
-      feedUrl,
-    };
+    const url = 'https://api.upstox.com/v3/feed/market-data-feed/authorize';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${this.accessToken}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        return {
+          success: false,
+          status: 'FEED_ERROR',
+          statusCode: response.status,
+          error: payload?.errors?.[0]?.message || 'Failed to authorize Upstox Market Feed V3.',
+        };
+      }
+
+      const feedUrl = payload?.data?.authorizedRedirectUri;
+      if (!feedUrl) {
+        return {
+          success: false,
+          status: 'FEED_ERROR',
+          error: 'Upstox did not return an authorized streaming URI.',
+        };
+      }
+
+      return {
+        success: true,
+        feedUrl,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        status: 'NETWORK_ERROR',
+        error: err.name === 'AbortError' ? 'Upstox Feed authorization timed out.' : err.message,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   /**

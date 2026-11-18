@@ -91,54 +91,71 @@ async function generateGeminiExplanation(stock, assessment, systemPrompt, userPa
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey.length < 20) return null;
 
-  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  // Modern Gemini models supported on Google AI Studio
+  const candidateModels = [
+    process.env.GEMINI_MODEL,
+    'gemini-3.1-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-3.5-flash-lite',
+    'gemini-flash-latest',
+  ].filter(Boolean);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
+  const modelsToTry = [...new Set(candidateModels)];
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemPrompt }] },
-        contents: [
-          { role: 'user', parts: [{ text: `Analyze this stock data and return structured JSON:\n${JSON.stringify(userPayload, null, 2)}` }] },
-        ],
-        generationConfig: {
-          response_mime_type: 'application/json',
-          temperature: 0.2,
-        },
-      }),
-    });
+  for (const model of modelsToTry) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
 
-    if (!response.ok) {
-      const errBody = await response.text();
-      throw new Error(`Gemini responded with status ${response.status}: ${errBody.substring(0, 100)}`);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [
+            { role: 'user', parts: [{ text: `Analyze this stock data and return structured JSON:\n${JSON.stringify(userPayload, null, 2)}` }] },
+          ],
+          generationConfig: {
+            response_mime_type: 'application/json',
+            temperature: 0.2,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text();
+        console.warn(`[AI Explainer] Gemini model ${model} returned ${response.status}: ${errBody.substring(0, 80)}`);
+        continue;
+      }
+
+      const payload = await response.json();
+      const rawText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) continue;
+      const parsed = JSON.parse(rawText);
+
+      return {
+        generatedBy: `gemini:${model}`,
+        isAiGenerated: true,
+        evaluatedAt: new Date().toISOString(),
+        ticker: stock.ticker,
+        companyName: stock.name || stock.ticker,
+        exchange: stock.exchange || 'NSE',
+        ...parsed,
+        assessmentSummary: assessment.summary,
+        classification: assessment.classification,
+        label: assessment.label,
+        color: assessment.color,
+      };
+    } catch (err) {
+      console.warn(`[AI Explainer] Gemini attempt with ${model} error: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const payload = await response.json();
-    const rawText = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-    const parsed = JSON.parse(rawText);
-
-    return {
-      generatedBy: `gemini:${model}`,
-      isAiGenerated: true,
-      evaluatedAt: new Date().toISOString(),
-      ticker: stock.ticker,
-      companyName: stock.name || stock.ticker,
-      exchange: stock.exchange || 'NSE',
-      ...parsed,
-      assessmentSummary: assessment.summary,
-      classification: assessment.classification,
-      label: assessment.label,
-      color: assessment.color,
-    };
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return null;
 }
 
 /**
